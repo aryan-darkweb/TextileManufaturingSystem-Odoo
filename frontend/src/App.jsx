@@ -132,12 +132,12 @@ export function App() {
       </main>
 
       {/* Clean ERP Footer - No Architecture Clutter */}
-      <footer className="bg-white border-t border-[#E8DFEF] py-5 mt-12 text-xs text-[#766D82]">
+      <footer className="bg-white border-t border-[#E8DFEF] py-6 mt-12 text-sm text-[#766D82]">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-3">
           <div>
             <span className="font-bold text-[#503568]">TextileFlow</span> — Textile Mills Operations & Supply Chain
           </div>
-          <div className="flex items-center gap-4 text-[11px] text-[#766D82]">
+          <div className="flex items-center gap-4 text-sm text-[#766D82]">
             <span>Inventory</span>
             <span>•</span>
             <span>Sales</span>

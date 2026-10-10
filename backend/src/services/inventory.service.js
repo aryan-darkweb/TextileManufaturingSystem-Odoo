@@ -97,28 +97,8 @@ async function updateProduct(id, data) {
     if (data.specifications !== undefined) updateData.specifications = data.specifications ? data.specifications.trim() : null;
     if (data.status !== undefined) updateData.status = data.status;
 
-    // Check if stock adjustment was explicitly provided
-    if (data.currentStock !== undefined && parseFloat(data.currentStock) !== existing.currentStock) {
-      const newStock = parseFloat(data.currentStock);
-      if (newStock < 0) {
-        throw new Error('Stock quantity cannot be negative');
-      }
-      const difference = newStock - existing.currentStock;
-      updateData.currentStock = newStock;
-
-      await tx.inventoryTransaction.create({
-        data: {
-          productId: id,
-          type: 'ADJUSTMENT',
-          quantity: difference,
-          balanceAfter: newStock,
-          referenceNumber: 'MANUAL_ADJUSTMENT',
-          notes: data.adjustmentReason || 'Manual inventory stock adjustment',
-          performedBy: data.performedBy || 'System User'
-        }
-      });
-    }
-
+    // Stock quantities can only be modified through recorded inventory movements
+    // (such as Goods Receipt or Dispatch), not through basic master data editing.
     return await tx.product.update({
       where: { id },
       data: updateData

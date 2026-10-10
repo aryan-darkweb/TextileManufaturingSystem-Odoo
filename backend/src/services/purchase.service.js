@@ -107,9 +107,32 @@ async function createPurchaseOrder(data) {
     const validatedItems = [];
 
     for (const item of rawItems) {
-      const product = await tx.product.findUnique({ where: { id: item.productId } });
+      let product = null;
+      if (item.productId) {
+        product = await tx.product.findUnique({ where: { id: item.productId } });
+      } else if (item.productName || item.name) {
+        const name = (item.productName || item.name).trim();
+        const code = (item.productCode || item.code || `MAT-${Date.now().toString().slice(-6)}`).trim().toUpperCase();
+        product = await tx.product.findUnique({ where: { code } });
+        if (!product) {
+          product = await tx.product.create({
+            data: {
+              code,
+              name,
+              type: item.type || 'RAW_MATERIAL',
+              category: item.category || 'Raw Material',
+              unit: item.unit || 'KG',
+              currentStock: 0.0,
+              minimumStock: parseFloat(item.minimumStock) || 50.0,
+              unitCost: parseFloat(item.unitPrice) || 0.0,
+              color: item.color || null
+            }
+          });
+        }
+      }
+
       if (!product) {
-        throw new Error(`Product with ID ${item.productId} not found`);
+        throw new Error(`Product or material details with valid ID or Name are required`);
       }
 
       const orderedQty = parseFloat(item.orderedQty || item.quantity);
@@ -118,7 +141,7 @@ async function createPurchaseOrder(data) {
         throw new Error('Ordered quantity must be greater than zero');
       }
       if (isNaN(unitPrice) || unitPrice < 0) {
-        throw new Error('Unit price must be a non-negative number');
+        throw new Error('Unit price must be a valid non-negative number');
       }
 
       const totalPrice = orderedQty * unitPrice;

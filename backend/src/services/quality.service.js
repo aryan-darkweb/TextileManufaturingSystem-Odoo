@@ -302,7 +302,8 @@ async function getDispatchReadyBySalesOrder(salesOrderId, txClient = null) {
     reservedOrDispatchedRolls,
     dispatchReadyRolls,
     blockedRolls,
-    isDispatchEligible: dispatchReadyRolls > 0,
+    totalInspected,
+    isDispatchEligible: totalInspected === 0 || dispatchReadyRolls > 0,
     uninspectedNote:
       totalInspected === 0
         ? 'No rolls inspected yet for this sales order'
@@ -357,15 +358,16 @@ async function getDispatchReadyByProductionOrder(productionOrderId) {
 
 /**
  * Guard function called by dispatch.service.js before creating a dispatch record.
- * Throws 409 if requestedRolls > dispatchReadyRolls.
+ * Throws 409 if quality inspections are present and requestedRolls > dispatchReadyRolls.
  */
 async function assertDispatchable(salesOrderId, requestedRolls, tx = null) {
   const rolls = parseInt(requestedRolls, 10) || 0;
-  if (rolls <= 0) return true;
+  const qualityInfo = await getDispatchReadyBySalesOrder(salesOrderId, tx);
+  const { dispatchReadyRolls, orderNumber, totalInspected } = qualityInfo;
 
-  const { dispatchReadyRolls, orderNumber } = await getDispatchReadyBySalesOrder(salesOrderId, tx);
-
-  if (rolls > dispatchReadyRolls) {
+  // When quality integration is available for this sales order,
+  // enforce that requested rolls do not exceed passed rolls.
+  if (totalInspected > 0 && rolls > 0 && rolls > dispatchReadyRolls) {
     const err = new Error(
       `Cannot dispatch ${rolls} rolls for ${orderNumber}. Only ${dispatchReadyRolls} passed rolls are dispatch-ready.`
     );
@@ -373,7 +375,7 @@ async function assertDispatchable(salesOrderId, requestedRolls, tx = null) {
     throw err;
   }
 
-  return true;
+  return { dispatchReadyRolls, orderNumber, totalInspected: totalInspected || 0 };
 }
 
 /**

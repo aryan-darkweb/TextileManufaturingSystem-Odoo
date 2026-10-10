@@ -29,10 +29,10 @@ async function listDispatchRecords(filters = {}) {
  * Get sales orders that are ready or eligible for dispatch
  */
 async function getEligibleSalesOrders() {
-  return await prisma.salesOrder.findMany({
+  const orders = await prisma.salesOrder.findMany({
     where: {
       status: {
-        in: ['READY_TO_SHIP', 'IN_PRODUCTION', 'CONFIRMED']
+        in: ['PENDING', 'CONFIRMED', 'IN_PRODUCTION', 'READY_TO_SHIP']
       }
     },
     orderBy: { deliveryDeadline: 'asc' },
@@ -53,6 +53,18 @@ async function getEligibleSalesOrders() {
       },
       dispatchRecords: true
     }
+  });
+
+  return orders.map((order) => {
+    const totalOrderedQty = order.items.reduce((sum, item) => sum + (item.quantity || 0), 0);
+    const totalDispatchedRolls = order.dispatchRecords.reduce((sum, d) => sum + (d.dispatchedRollCount || 0), 0);
+    const outstandingQty = Math.max(0, totalOrderedQty - totalDispatchedRolls);
+    return {
+      ...order,
+      totalOrderedQty,
+      totalDispatchedRolls,
+      outstandingQty
+    };
   });
 }
 
@@ -85,17 +97,23 @@ async function createAndConfirmDispatch(data) {
   const { salesOrderId, vehicleNumber, driverName, driverPhone, destination, invoiceNumber, dispatchedRollCount } = data;
 
   if (!salesOrderId) {
-    throw new Error('Sales order ID is required');
+    const err = new Error('Sales order ID is required');
+    err.statusCode = 400;
+    throw err;
   }
-  if (!vehicleNumber || typeof vehicleNumber !== 'string') {
-    throw new Error('Vehicle number / transport identifier is required');
+  if (!vehicleNumber || typeof vehicleNumber !== 'string' || !vehicleNumber.trim()) {
+    const err = new Error('Vehicle number / transport identifier is required');
+    err.statusCode = 400;
+    throw err;
   }
-  if (!destination || typeof destination !== 'string') {
-    throw new Error('Destination delivery address is required');
+  if (!destination || typeof destination !== 'string' || !destination.trim()) {
+    const err = new Error('Destination delivery address is required');
+    err.statusCode = 400;
+    throw err;
   }
 
   // Quality Control check: ensure requested rolls do not exceed dispatch-ready passed rolls
-  await assertDispatchable(salesOrderId, dispatchedRollCount);
+  const qualityInfo = await assertDispatchable(salesOrderId, dispatchedRollCount);
 
   return await prisma.$transaction(async (tx) => {
     // 1. Fetch sales order with line items and current stock
@@ -109,24 +127,41 @@ async function createAndConfirmDispatch(data) {
     });
 
     if (!salesOrder) {
-      throw new Error(`Sales order with ID ${salesOrderId} not found`);
+      const err = new Error(`Sales order with ID ${salesOrderId} not found`);
+      err.statusCode = 404;
+      throw err;
     }
 
     if (salesOrder.status === 'DISPATCHED' || salesOrder.status === 'COMPLETED') {
-      throw new Error(`Sales order ${salesOrder.orderNumber} has already been dispatched. Duplicate dispatch prohibited.`);
+      const err = new Error(`Sales order ${salesOrder.orderNumber} has already been dispatched. Duplicate dispatch prohibited.`);
+      err.statusCode = 409;
+      throw err;
     }
 
     if (salesOrder.status === 'CANCELLED') {
-      throw new Error(`Cannot dispatch a cancelled sales order (${salesOrder.orderNumber})`);
+      const err = new Error(`Cannot dispatch a cancelled sales order (${salesOrder.orderNumber})`);
+      err.statusCode = 400;
+      throw err;
     }
+
+    const rollCount = parseInt(dispatchedRollCount, 10) || 0;
+    const isQualityIntegrated = qualityInfo && qualityInfo.totalInspected > 0;
 
     // 2. Validate stock availability for all items before any deduction
     for (const item of salesOrder.items) {
+      let dispatchItemQty = item.quantity;
+      if (isQualityIntegrated && rollCount > 0 && rollCount < qualityInfo.totalInspected) {
+        dispatchItemQty = Math.round((item.quantity * (rollCount / qualityInfo.totalInspected)) * 100) / 100;
+      }
+      if (dispatchItemQty <= 0) dispatchItemQty = item.quantity;
+
       const availableStock = item.product.currentStock;
-      if (availableStock <= 0) {
-        throw new Error(
-          `Insufficient stock to dispatch item "${item.fabricType || item.product.name}" (${item.product.code}). Warehouse stock is depleted (0 ${item.product.unit}).`
+      if (availableStock < dispatchItemQty) {
+        const err = new Error(
+          `Insufficient stock to dispatch item "${item.fabricType || item.product.name}" (${item.product.code}). Required: ${dispatchItemQty} ${item.product.unit}, Available in warehouse: ${availableStock} ${item.product.unit}`
         );
+        err.statusCode = 409;
+        throw err;
       }
     }
 
@@ -137,8 +172,13 @@ async function createAndConfirmDispatch(data) {
 
     // 4. Deduct stock and log inventory transactions
     for (const item of salesOrder.items) {
-      const deductQty = Math.min(item.product.currentStock, item.quantity);
-      const newStock = Math.max(0, item.product.currentStock - deductQty);
+      let dispatchItemQty = item.quantity;
+      if (isQualityIntegrated && rollCount > 0 && rollCount < qualityInfo.totalInspected) {
+        dispatchItemQty = Math.round((item.quantity * (rollCount / qualityInfo.totalInspected)) * 100) / 100;
+      }
+      if (dispatchItemQty <= 0) dispatchItemQty = item.quantity;
+
+      const newStock = Math.max(0, item.product.currentStock - dispatchItemQty);
 
       await tx.product.update({
         where: { id: item.productId },
@@ -149,24 +189,25 @@ async function createAndConfirmDispatch(data) {
         data: {
           productId: item.productId,
           type: 'DISPATCH',
-          quantity: -deductQty,
+          quantity: -dispatchItemQty,
           balanceAfter: newStock,
           referenceNumber: dispatchNumber,
-          notes: `Dispatched against ${salesOrder.orderNumber} to ${salesOrder.customer.companyName || salesOrder.customer.name} (Vehicle: ${vehicleNumber})`,
+          notes: `Dispatched against ${salesOrder.orderNumber} to ${salesOrder.customer.companyName || salesOrder.customer.name} (Vehicle: ${vehicleNumber.trim().toUpperCase()})`,
           performedBy: data.performedBy || 'Dispatch Supervisor'
         }
       });
     }
 
-    // 5. Update sales order status to DISPATCHED
-    await tx.salesOrder.update({
-      where: { id: salesOrderId },
-      data: { status: 'DISPATCHED' }
-    });
+    // 5. Update sales order status
+    const isFinalDispatch = !isQualityIntegrated || rollCount >= qualityInfo.totalInspected || (qualityInfo.dispatchReadyRolls - rollCount <= 0);
+    if (isFinalDispatch) {
+      await tx.salesOrder.update({
+        where: { id: salesOrderId },
+        data: { status: 'DISPATCHED' }
+      });
+    }
 
     // 6. Create Dispatch Record
-    const rollCount = parseInt(dispatchedRollCount, 10) || salesOrder.items.reduce((s, it) => s + (it.quantity > 50 ? Math.ceil(it.quantity / 50) : 1), 0);
-
     const dispatchRecord = await tx.dispatchRecord.create({
       data: {
         dispatchNumber,

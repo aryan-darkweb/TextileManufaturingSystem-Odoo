@@ -45,13 +45,13 @@ export function Navbar({ activeTab, setActiveTab, health, onOpenHealth }) {
                 <button
                   key={item.id}
                   onClick={() => setActiveTab(item.id)}
-                  className={`flex items-center space-x-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
+                  className={`flex items-center space-x-2 px-3.5 py-2 rounded-xl text-sm font-semibold transition-all ${
                     isActive
                       ? 'bg-[#EEE5F7] text-[#503568] shadow-xs'
                       : 'text-[#766D82] hover:text-[#292235] hover:bg-[#FAF7FC]'
                   }`}
                 >
-                  <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-[#7950A8]' : 'text-[#766D82]'}`} />
+                  <Icon className={`w-4 h-4 ${isActive ? 'text-[#7950A8]' : 'text-[#766D82]'}`} />
                   <span>{item.label}</span>
                 </button>
               );
