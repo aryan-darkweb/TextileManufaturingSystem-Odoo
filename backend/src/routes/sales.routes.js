@@ -26,6 +26,7 @@ function validateCustomerInput(body) {
 router.get('/orders', salesController.getSalesOrders);
 router.post('/orders', validateBody(validateOrderInput), salesController.createSalesOrder);
 router.get('/orders/:id', salesController.getSalesOrderById);
+router.patch('/orders/:id/status', salesController.updateStatus);
 router.get('/customers', salesController.getCustomers);
 router.post('/customers', validateBody(validateCustomerInput), salesController.createCustomer);
 

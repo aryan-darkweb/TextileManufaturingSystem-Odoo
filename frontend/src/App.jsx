@@ -4,8 +4,10 @@ import { HealthModal } from './components/HealthModal';
 import { ModuleGrid } from './components/ModuleGrid';
 import { InventoryView } from './components/InventoryView';
 import { SalesOrdersView } from './components/SalesOrdersView';
-import { FactoryOpsSkeletonView } from './components/FactoryOpsSkeletonView';
-import { ArchitectureDocsView } from './components/ArchitectureDocsView';
+import { PurchaseOrdersView } from './components/PurchaseOrdersView';
+import { DispatchView } from './components/DispatchView';
+import { FactoryOpsView } from './components/FactoryOpsView';
+import { DashboardView } from './components/DashboardView';
 import { api } from './services/api';
 
 export function App() {
@@ -56,7 +58,7 @@ export function App() {
   const dbConnected = Boolean(health?.database?.connected);
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col font-sans text-slate-900 antialiased selection:bg-sky-500 selection:text-white">
+    <div className="min-h-screen bg-[#FAF7FC] flex flex-col font-sans text-[#292235] antialiased selection:bg-[#7950A8] selection:text-white">
       {/* Top Navigation */}
       <Navbar
         activeTab={activeTab}
@@ -86,27 +88,43 @@ export function App() {
             onOpenHealth={() => setIsHealthModalOpen(true)}
           />
         )}
-        {activeTab === 'factory-ops' && <FactoryOpsSkeletonView />}
-        {activeTab === 'docs' && <ArchitectureDocsView />}
+        {activeTab === 'purchase' && (
+          <PurchaseOrdersView
+            dbConnected={dbConnected}
+            onOpenHealth={() => setIsHealthModalOpen(true)}
+          />
+        )}
+        {activeTab === 'dispatch' && (
+          <DispatchView
+            dbConnected={dbConnected}
+            onOpenHealth={() => setIsHealthModalOpen(true)}
+          />
+        )}
+        {activeTab === 'factory' && <FactoryOpsView />}
+        {activeTab === 'dashboard' && <DashboardView setActiveTab={setActiveTab} />}
       </main>
 
-      {/* Footer */}
-      <footer className="bg-white border-t border-slate-200 py-6 mt-12 text-xs text-slate-500">
+      {/* Clean ERP Footer - No Architecture Clutter */}
+      <footer className="bg-white border-t border-[#E8DFEF] py-5 mt-12 text-xs text-[#766D82]">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-3">
           <div>
-            <span className="font-semibold text-slate-800">TextileFlow</span> — Everest Textile Mills Digital Backbone
+            <span className="font-bold text-[#503568]">TextileFlow</span> — Textile Mills Operations & Supply Chain
           </div>
-          <div className="flex items-center gap-4 text-slate-400">
-            <span>React + Vite</span>
+          <div className="flex items-center gap-4 text-[11px] text-[#766D82]">
+            <span>Inventory</span>
             <span>•</span>
-            <span>Monolithic Express (Port 5000)</span>
+            <span>Sales</span>
             <span>•</span>
-            <span>Supabase PostgreSQL + Prisma</span>
+            <span>Purchases</span>
+            <span>•</span>
+            <span>Dispatch</span>
+            <span>•</span>
+            <span>Factory Ops</span>
           </div>
         </div>
       </footer>
 
-      {/* System Health Details Modal */}
+      {/* System Health Modal */}
       <HealthModal
         isOpen={isHealthModalOpen}
         onClose={() => setIsHealthModalOpen(false)}

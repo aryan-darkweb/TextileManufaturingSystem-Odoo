@@ -6,24 +6,8 @@ const env = require('./config/env');
 
 const app = express();
 
-// CORS configuration (allow Vite dev server and production origins)
-app.use(
-  cors({
-    origin: (origin, callback) => {
-      // Allow requests with no origin (like mobile apps, curl, or Postman)
-      if (!origin) return callback(null, true);
-      // In development, allow localhost/127.0.0.1
-      if (env.nodeEnv === 'development' || origin.includes('localhost') || origin.includes('127.0.0.1')) {
-        return callback(null, true);
-      }
-      if (origin === env.corsOrigin) {
-        return callback(null, true);
-      }
-      return callback(null, true); // Permissive for local dev workflow
-    },
-    credentials: true
-  })
-);
+// Enable CORS for all incoming requests (Vite dev server, localhost, etc.)
+app.use(cors());
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));

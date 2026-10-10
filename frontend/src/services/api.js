@@ -1,5 +1,5 @@
-// Frontend API Service - Communicates with monolithic Express backend on port 5000
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
+// Frontend API Service - Communicates with monolithic Express backend on port 5000 (via Vite proxy or direct)
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 
 async function request(endpoint, options = {}) {
   const url = `${API_BASE_URL}${endpoint}`;
@@ -26,7 +26,6 @@ async function request(endpoint, options = {}) {
     return data;
   } catch (err) {
     if (!err.status) {
-      // Network failure / server offline
       err.message = `Cannot connect to TextileFlow backend at ${API_BASE_URL}. Ensure the Express server is running on port 5000.`;
     }
     throw err;
@@ -37,7 +36,7 @@ export const api = {
   // System Health
   getHealth: () => request('/health'),
 
-  // Inventory (Kishan)
+  // Inventory Management
   getProducts: (params = {}) => {
     const query = new URLSearchParams(params).toString();
     return request(`/inventory/products${query ? `?${query}` : ''}`);
@@ -48,17 +47,33 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(productData),
     }),
+  updateProduct: (id, productData) =>
+    request(`/inventory/products/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(productData),
+    }),
   getLowStockAlerts: () => request('/inventory/low-stock'),
+  recordInventoryTransaction: (txData) =>
+    request('/inventory/transactions', {
+      method: 'POST',
+      body: JSON.stringify(txData),
+    }),
 
-  // Sales Orders (Kishan)
+  // Sales Orders
   getSalesOrders: (params = {}) => {
     const query = new URLSearchParams(params).toString();
     return request(`/sales/orders${query ? `?${query}` : ''}`);
   },
+  getSalesOrderById: (id) => request(`/sales/orders/${id}`),
   createSalesOrder: (orderData) =>
     request('/sales/orders', {
       method: 'POST',
       body: JSON.stringify(orderData),
+    }),
+  updateSalesOrderStatus: (id, status) =>
+    request(`/sales/orders/${id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
     }),
   getCustomers: () => request('/sales/customers'),
   createCustomer: (customerData) =>
@@ -67,11 +82,51 @@ export const api = {
       body: JSON.stringify(customerData),
     }),
 
-  // Dashboard (Joint)
+  // Purchase Management
+  getSuppliers: () => request('/purchase/suppliers'),
+  createSupplier: (supplierData) =>
+    request('/purchase/suppliers', {
+      method: 'POST',
+      body: JSON.stringify(supplierData),
+    }),
+  getPurchaseOrders: (params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    return request(`/purchase/orders${query ? `?${query}` : ''}`);
+  },
+  getPurchaseOrderById: (id) => request(`/purchase/orders/${id}`),
+  createPurchaseOrder: (poData) =>
+    request('/purchase/orders', {
+      method: 'POST',
+      body: JSON.stringify(poData),
+    }),
+  receivePurchaseOrderGoods: (id, receiveData) =>
+    request(`/purchase/orders/${id}/receive`, {
+      method: 'POST',
+      body: JSON.stringify(receiveData),
+    }),
+
+  // Dispatch & Logistics
+  getDispatches: (params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    return request(`/dispatch${query ? `?${query}` : ''}`);
+  },
+  getEligibleDispatchOrders: () => request('/dispatch/eligible-orders'),
+  createDispatch: (dispatchData) =>
+    request('/dispatch', {
+      method: 'POST',
+      body: JSON.stringify(dispatchData),
+    }),
+
+  // Dashboard & Analytics
   getDashboardSummary: () => request('/dashboard/summary'),
 
-  // Module integration status checks (Teammate Factory Ops)
+  // Factory Operations (Integration Skeletons)
   getManufacturingStatus: () => request('/manufacturing/status'),
+  getManufacturingMachines: () => request('/manufacturing/machines'),
+  getManufacturingOrders: () => request('/manufacturing/orders'),
   getQualityStatus: () => request('/quality/status'),
+  getQualityInspections: () => request('/quality/inspections'),
   getHrStatus: () => request('/hr/status'),
+  getHrEmployees: () => request('/hr/employees'),
+  getHrAttendance: () => request('/hr/attendance'),
 };

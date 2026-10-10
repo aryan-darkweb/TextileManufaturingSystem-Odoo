@@ -1,4 +1,4 @@
-# TextileFlow — Everest Textile Mills Digital Backbone
+# TextileFlow — Textile Mills Platform
 
 > **Unified Textile Manufacturing & Supply Chain Management System**  
 > Replacing notebooks, phone calls, and paper slips with a monolithic Express application and a single shared Supabase PostgreSQL database.

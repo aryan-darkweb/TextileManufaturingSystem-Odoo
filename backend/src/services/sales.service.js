@@ -21,7 +21,8 @@ async function listSalesOrders(filters = {}) {
               id: true,
               name: true,
               code: true,
-              unit: true
+              unit: true,
+              currentStock: true
             }
           }
         }
@@ -38,7 +39,8 @@ async function listSalesOrders(filters = {}) {
         select: {
           id: true,
           dispatchNumber: true,
-          status: true
+          status: true,
+          dispatchedAt: true
         }
       }
     }
@@ -160,6 +162,24 @@ async function createSalesOrder(data) {
   });
 }
 
+async function updateOrderStatus(id, status) {
+  const validStatuses = ['PENDING', 'CONFIRMED', 'IN_PRODUCTION', 'READY_TO_SHIP', 'DISPATCHED', 'COMPLETED', 'CANCELLED'];
+  if (!validStatuses.includes(status)) {
+    throw new Error(`Invalid status: ${status}. Must be one of ${validStatuses.join(', ')}`);
+  }
+
+  return await prisma.salesOrder.update({
+    where: { id },
+    data: { status },
+    include: {
+      customer: true,
+      items: {
+        include: { product: true }
+      }
+    }
+  });
+}
+
 async function listCustomers() {
   return await prisma.customer.findMany({
     orderBy: { name: 'asc' },
@@ -187,6 +207,7 @@ module.exports = {
   listSalesOrders,
   getSalesOrderById,
   createSalesOrder,
+  updateOrderStatus,
   listCustomers,
   createCustomer
 };

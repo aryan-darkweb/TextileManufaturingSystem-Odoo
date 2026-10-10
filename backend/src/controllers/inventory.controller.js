@@ -35,6 +35,15 @@ async function createProduct(req, res, next) {
   }
 }
 
+async function updateProduct(req, res, next) {
+  try {
+    const updated = await inventoryService.updateProduct(req.params.id, req.body);
+    return success(res, updated, 'Product updated successfully');
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function createTransaction(req, res, next) {
   try {
     const result = await inventoryService.recordTransaction(req.body);
@@ -57,6 +66,7 @@ module.exports = {
   getProducts,
   getProductById,
   createProduct,
+  updateProduct,
   createTransaction,
   getLowStock
 };

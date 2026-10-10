@@ -22,6 +22,8 @@ function validateTransactionInput(body) {
 router.get('/products', inventoryController.getProducts);
 router.post('/products', validateBody(validateProductInput), inventoryController.createProduct);
 router.get('/products/:id', inventoryController.getProductById);
+router.put('/products/:id', inventoryController.updateProduct);
+router.patch('/products/:id', inventoryController.updateProduct);
 router.get('/low-stock', inventoryController.getLowStock);
 router.post('/transactions', validateBody(validateTransactionInput), inventoryController.createTransaction);
 

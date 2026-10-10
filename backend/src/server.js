@@ -5,7 +5,7 @@ const { checkDatabaseConnection } = require('./config/prisma');
 
 const PORT = env.port;
 
-const server = app.listen(PORT, async () => {
+const server = app.listen(PORT, '0.0.0.0', async () => {
   logger.startup();
   console.log(`Server listening at http://localhost:${PORT}`);
   console.log(`Health check:    http://localhost:${PORT}/api/health`);

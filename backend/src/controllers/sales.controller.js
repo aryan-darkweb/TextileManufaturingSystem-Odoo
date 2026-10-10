@@ -35,6 +35,22 @@ async function createSalesOrder(req, res, next) {
   }
 }
 
+async function updateStatus(req, res, next) {
+  try {
+    const { status } = req.body;
+    if (!status) {
+      return res.status(400).json({
+        success: false,
+        message: 'Status is required'
+      });
+    }
+    const updated = await salesService.updateOrderStatus(req.params.id, status);
+    return success(res, updated, 'Order status updated successfully');
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function getCustomers(req, res, next) {
   try {
     const customers = await salesService.listCustomers();
@@ -57,6 +73,7 @@ module.exports = {
   getSalesOrders,
   getSalesOrderById,
   createSalesOrder,
+  updateStatus,
   getCustomers,
   createCustomer
 };
