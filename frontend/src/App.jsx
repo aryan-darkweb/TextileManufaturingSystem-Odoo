@@ -4,7 +4,7 @@ import { HealthModal } from './components/HealthModal';
 import { ModuleGrid } from './components/ModuleGrid';
 import { InventoryView } from './components/InventoryView';
 import { SalesOrdersView } from './components/SalesOrdersView';
-import { FactoryOpsSkeletonView } from './components/FactoryOpsSkeletonView';
+import { FactoryOpsView } from './components/factory/FactoryOpsView';
 import { ArchitectureDocsView } from './components/ArchitectureDocsView';
 import { api } from './services/api';
 
@@ -86,7 +86,12 @@ export function App() {
             onOpenHealth={() => setIsHealthModalOpen(true)}
           />
         )}
-        {activeTab === 'factory-ops' && <FactoryOpsSkeletonView />}
+        {activeTab === 'factory-ops' && (
+          <FactoryOpsView
+            dbConnected={dbConnected}
+            onOpenHealth={() => setIsHealthModalOpen(true)}
+          />
+        )}
         {activeTab === 'docs' && <ArchitectureDocsView />}
       </main>
 
