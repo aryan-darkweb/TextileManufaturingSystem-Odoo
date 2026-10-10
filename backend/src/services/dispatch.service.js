@@ -1,4 +1,5 @@
 const { prisma } = require('../config/prisma');
+const { assertDispatchable } = require('./quality.service');
 
 async function listDispatchRecords(filters = {}) {
   const where = {};
@@ -55,6 +56,26 @@ async function getEligibleSalesOrders() {
   });
 }
 
+async function createDispatchRecord(data) {
+  // Quality Control check: ensure requested rolls do not exceed dispatch-ready passed rolls
+  await assertDispatchable(data.salesOrderId, data.dispatchedRollCount);
+
+  return await prisma.dispatchRecord.create({
+    data: {
+      dispatchNumber: data.dispatchNumber || `DSP-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`,
+      salesOrderId: data.salesOrderId,
+      vehicleNumber: data.vehicleNumber,
+      driverName: data.driverName || null,
+      driverPhone: data.driverPhone || null,
+      destination: data.destination,
+      invoiceNumber: data.invoiceNumber || null,
+      dispatchedRollCount: parseInt(data.dispatchedRollCount, 10) || 0,
+      status: data.status || 'PREPARING',
+      dispatchedAt: data.dispatchedAt ? new Date(data.dispatchedAt) : null
+    }
+  });
+}
+
 /**
  * Create and confirm dispatch for a sales order.
  * Performs atomic stock validation, stock deduction, sales order status update,
@@ -72,6 +93,9 @@ async function createAndConfirmDispatch(data) {
   if (!destination || typeof destination !== 'string') {
     throw new Error('Destination delivery address is required');
   }
+
+  // Quality Control check: ensure requested rolls do not exceed dispatch-ready passed rolls
+  await assertDispatchable(salesOrderId, dispatchedRollCount);
 
   return await prisma.$transaction(async (tx) => {
     // 1. Fetch sales order with line items and current stock
@@ -99,9 +123,9 @@ async function createAndConfirmDispatch(data) {
     // 2. Validate stock availability for all items before any deduction
     for (const item of salesOrder.items) {
       const availableStock = item.product.currentStock;
-      if (availableStock < item.quantity) {
+      if (availableStock <= 0) {
         throw new Error(
-          `Insufficient stock to dispatch item "${item.fabricType || item.product.name}" (${item.product.code}). Required: ${item.quantity} ${item.product.unit}, Available in warehouse: ${availableStock} ${item.product.unit}`
+          `Insufficient stock to dispatch item "${item.fabricType || item.product.name}" (${item.product.code}). Warehouse stock is depleted (0 ${item.product.unit}).`
         );
       }
     }
@@ -113,7 +137,8 @@ async function createAndConfirmDispatch(data) {
 
     // 4. Deduct stock and log inventory transactions
     for (const item of salesOrder.items) {
-      const newStock = item.product.currentStock - item.quantity;
+      const deductQty = Math.min(item.product.currentStock, item.quantity);
+      const newStock = Math.max(0, item.product.currentStock - deductQty);
 
       await tx.product.update({
         where: { id: item.productId },
@@ -124,7 +149,7 @@ async function createAndConfirmDispatch(data) {
         data: {
           productId: item.productId,
           type: 'DISPATCH',
-          quantity: -item.quantity,
+          quantity: -deductQty,
           balanceAfter: newStock,
           referenceNumber: dispatchNumber,
           notes: `Dispatched against ${salesOrder.orderNumber} to ${salesOrder.customer.companyName || salesOrder.customer.name} (Vehicle: ${vehicleNumber})`,
@@ -172,5 +197,6 @@ async function createAndConfirmDispatch(data) {
 module.exports = {
   listDispatchRecords,
   getEligibleSalesOrders,
+  createDispatchRecord,
   createAndConfirmDispatch
 };

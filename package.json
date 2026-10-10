@@ -10,7 +10,8 @@
     "prisma:migrate": "npm --prefix backend run prisma:migrate",
     "prisma:deploy": "npm --prefix backend run prisma:deploy",
     "prisma:studio": "npm --prefix backend run prisma:studio",
-    "seed": "npm --prefix backend run seed"
+    "seed": "npm --prefix backend run seed",
+    "seed:factory": "npm --prefix backend run seed:factory"
   },
   "keywords": [
     "textile",

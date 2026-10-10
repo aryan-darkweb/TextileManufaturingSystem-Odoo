@@ -6,7 +6,7 @@ import { InventoryView } from './components/InventoryView';
 import { SalesOrdersView } from './components/SalesOrdersView';
 import { PurchaseOrdersView } from './components/PurchaseOrdersView';
 import { DispatchView } from './components/DispatchView';
-import { FactoryOpsView } from './components/FactoryOpsView';
+import { FactoryOpsView } from './components/factory/FactoryOpsView';
 import { DashboardView } from './components/DashboardView';
 import { api } from './services/api';
 
@@ -100,7 +100,34 @@ export function App() {
             onOpenHealth={() => setIsHealthModalOpen(true)}
           />
         )}
-        {activeTab === 'factory' && <FactoryOpsView />}
+        {(activeTab === 'factory' || activeTab === 'factory-ops') && (
+          <FactoryOpsView
+            dbConnected={dbConnected}
+            onOpenHealth={() => setIsHealthModalOpen(true)}
+            initialTab="today"
+          />
+        )}
+        {activeTab === 'manufacturing' && (
+          <FactoryOpsView
+            dbConnected={dbConnected}
+            onOpenHealth={() => setIsHealthModalOpen(true)}
+            initialTab="production"
+          />
+        )}
+        {activeTab === 'quality' && (
+          <FactoryOpsView
+            dbConnected={dbConnected}
+            onOpenHealth={() => setIsHealthModalOpen(true)}
+            initialTab="quality"
+          />
+        )}
+        {activeTab === 'hr' && (
+          <FactoryOpsView
+            dbConnected={dbConnected}
+            onOpenHealth={() => setIsHealthModalOpen(true)}
+            initialTab="hr"
+          />
+        )}
         {activeTab === 'dashboard' && <DashboardView setActiveTab={setActiveTab} />}
       </main>
 

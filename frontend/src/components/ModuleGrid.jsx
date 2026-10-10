@@ -61,36 +61,36 @@ export function ModuleGrid({ setActiveTab, summary, dbConnected }) {
     },
     {
       id: 'manufacturing',
-      title: 'Manufacturing',
+      title: 'Manufacturing Execution',
       subtitle: 'Spinning, Weaving & Dyeing Floors',
-      status: 'In Progress',
-      statusType: 'progress',
+      status: 'Available',
+      statusType: 'active',
       icon: Cpu,
-      description: 'Floor machines (Ring frames, Airjets, Dyeing jiggers), production order stages, shift capacity, and downtime tracking.',
-      tab: 'factory',
-      stats: 'Floor Jobs & Machines'
+      description: 'Floor machines (Ring frames, Airjets, Dyeing jiggers), production order stages, shift capacity, and material consumption tracking.',
+      tab: 'manufacturing',
+      stats: summary?.factoryOperations ? `${summary.factoryOperations.activeProductionOrders} Active Floor Jobs` : 'Machines & Floor Jobs'
     },
     {
       id: 'quality',
       title: 'Quality Control',
-      subtitle: 'Fabric Roll Defect Inspections',
-      status: 'In Progress',
-      statusType: 'progress',
+      subtitle: 'Fabric Roll Defect Inspections & Gate Pass',
+      status: 'Available',
+      statusType: 'active',
       icon: CheckSquare,
-      description: 'Inspect rolls for holes, color mismatches, or uneven weaving before packing. Mark rolls as Passed, Rework, or Rejected.',
-      tab: 'factory',
-      stats: 'Inspection Slips'
+      description: 'Inspect fabric rolls for holes, color mismatches, and weaving flaws. Live gate pass validation: only passed rolls can be dispatched.',
+      tab: 'quality',
+      stats: summary?.factoryOperations ? `${summary.factoryOperations.qcPassRate} QC Pass Rate` : 'Inspection Slips & Defect Tracking'
     },
     {
       id: 'hr',
-      title: 'HR & Attendance',
-      subtitle: 'Worker Shift Registers & Wage Calculations',
-      status: 'In Progress',
-      statusType: 'progress',
+      title: 'HR & Worker Attendance',
+      subtitle: 'Shift Registers & Wage Payroll',
+      status: 'Available',
+      statusType: 'active',
       icon: Users,
-      description: 'Track mill workers across morning, evening, and night shifts with wage calculation support for monthly payroll.',
-      tab: 'factory',
-      stats: 'Shift Registers'
+      description: 'Track factory mill workers across Morning, Evening, and Night shifts with live wage calculation per shift for accurate payroll.',
+      tab: 'hr',
+      stats: summary?.factoryOperations ? `${summary.factoryOperations.activeWorkers} Workers Active` : 'Shift Registers & Wages'
     },
     {
       id: 'dashboard',

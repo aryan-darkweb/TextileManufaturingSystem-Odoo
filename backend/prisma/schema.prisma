@@ -138,6 +138,7 @@ enum AttendanceStatus {
   PRESENT
   ABSENT
   HALF_DAY
+  LEAVE
 }
 
 // ==============================================================================
@@ -165,6 +166,7 @@ model Product {
   purchaseOrderItems    PurchaseOrderItem[]
   salesOrderItems       SalesOrderItem[]
   productionOrders      ProductionOrder[]
+  materialConsumptions  MaterialConsumption[]
 
   @@map("products")
 }
@@ -329,6 +331,7 @@ model Machine {
   updatedAt        DateTime          @updatedAt
 
   productionOrders ProductionOrder[]
+  stageLogs        ProductionStageLog[]
 
   @@map("machines")
 }
@@ -351,7 +354,9 @@ model ProductionOrder {
   createdAt        DateTime            @default(now())
   updatedAt        DateTime            @updatedAt
 
-  inspections      QualityInspection[]
+  inspections          QualityInspection[]
+  stageLogs            ProductionStageLog[]
+  materialConsumptions MaterialConsumption[]
 
   @@map("production_orders")
 }
@@ -373,6 +378,8 @@ model QualityInspection {
   notes             String?
   inspectedAt       DateTime        @default(now())
 
+  defectRecords     DefectRecord[]
+
   @@map("quality_inspections")
 }
 
@@ -392,6 +399,7 @@ model Employee {
   updatedAt    DateTime       @updatedAt
 
   attendances  Attendance[]
+  stageLogs    ProductionStageLog[]
 
   @@map("employees")
 }
@@ -408,4 +416,68 @@ model Attendance {
 
   @@unique([employeeId, date, shift])
   @@map("attendances")
+}
+
+// ==============================================================================
+// 8. FACTORY OPERATIONS EXTENSIONS (Owner: Developer 2)
+// ==============================================================================
+
+model ProductionStageLog {
+  id                  String           @id @default(cuid())
+  productionOrderId   String
+  productionOrder     ProductionOrder  @relation(fields: [productionOrderId], references: [id], onDelete: Cascade)
+  stage               ProductionStage
+  machineId           String?
+  machine             Machine?         @relation(fields: [machineId], references: [id])
+  operatorId          String?
+  operator            Employee?        @relation(fields: [operatorId], references: [id])
+  status              ProductionStatus @default(IN_PROGRESS)
+  inputQuantity       Float            @default(0.0)
+  outputQuantity      Float            @default(0.0)
+  wasteQuantity       Float            @default(0.0)
+  outputTransactionId String?
+  startedAt           DateTime         @default(now())
+  completedAt         DateTime?
+  notes               String?
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+
+  @@unique([productionOrderId, stage])
+  @@index([productionOrderId])
+  @@map("production_stage_logs")
+}
+
+model MaterialConsumption {
+  id                     String          @id @default(cuid())
+  productionOrderId      String
+  productionOrder        ProductionOrder @relation(fields: [productionOrderId], references: [id], onDelete: Cascade)
+  rawMaterialId          String
+  rawMaterial            Product         @relation(fields: [rawMaterialId], references: [id])
+  stage                  ProductionStage
+  plannedQuantity        Float
+  actualQuantity         Float           @default(0.0)
+  unit                   UnitOfMeasure
+  inventoryTransactionId String?
+  isDeducted             Boolean         @default(false)
+  recordedAt             DateTime        @default(now())
+  notes                  String?
+
+  @@unique([productionOrderId, rawMaterialId, stage])
+  @@index([productionOrderId])
+  @@map("material_consumptions")
+}
+
+model DefectRecord {
+  id           String            @id @default(cuid())
+  inspectionId String
+  inspection   QualityInspection @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+  defectType   DefectType
+  defectQty    Float             @default(1.0)
+  severity     String            @default("MINOR")
+  location     String?
+  notes        String?
+  createdAt    DateTime          @default(now())
+
+  @@index([inspectionId])
+  @@map("defect_records")
 }
