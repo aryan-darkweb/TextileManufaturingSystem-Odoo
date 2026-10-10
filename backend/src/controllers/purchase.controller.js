@@ -62,11 +62,26 @@ async function receiveGoods(req, res, next) {
   }
 }
 
+async function createPurchaseOrderFromShortage(req, res, next) {
+  try {
+    const order = await purchaseService.createPurchaseOrderFromShortage(req.body);
+    const statusCode = order.duplicatePrevented ? 200 : 201;
+    const msg = order.duplicatePrevented
+      ? 'Duplicate request prevented; existing purchase order returned'
+      : 'Purchase order created successfully from material shortage';
+    return success(res, order, msg, statusCode);
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   getSuppliers,
   createSupplier,
   getPurchaseOrders,
   getPurchaseOrderById,
   createPurchaseOrder,
-  receiveGoods
+  receiveGoods,
+  createPurchaseOrderFromShortage
 };
+

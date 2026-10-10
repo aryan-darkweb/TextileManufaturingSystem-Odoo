@@ -69,6 +69,29 @@ enum DispatchStatus {
   DELIVERED
 }
 
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  PARTIALLY_PAID
+  PAID
+  CANCELLED
+}
+
+enum BillStatus {
+  DRAFT
+  POSTED
+  PARTIALLY_PAID
+  PAID
+  CANCELLED
+}
+
+enum PaymentMethod {
+  BANK_TRANSFER
+  CHEQUE
+  CASH
+  UPI
+}
+
 enum MachineType {
   SPINNING
   WEAVING
@@ -202,6 +225,7 @@ model Supplier {
   updatedAt          DateTime        @updatedAt
 
   purchaseOrders     PurchaseOrder[]
+  bills              SupplierBill[]
 
   @@map("suppliers")
 }
@@ -220,6 +244,7 @@ model PurchaseOrder {
   updatedAt           DateTime           @updatedAt
 
   items               PurchaseOrderItem[]
+  bills               SupplierBill[]
 
   @@map("purchase_orders")
 }
@@ -253,6 +278,7 @@ model Customer {
   updatedAt   DateTime     @updatedAt
 
   salesOrders SalesOrder[]
+  invoices    Invoice[]
 
   @@map("customers")
 }
@@ -273,6 +299,7 @@ model SalesOrder {
   items            SalesOrderItem[]
   productionOrders ProductionOrder[]
   dispatchRecords  DispatchRecord[]
+  invoices         Invoice[]
 
   @@map("sales_orders")
 }
@@ -398,8 +425,9 @@ model Employee {
   createdAt    DateTime       @default(now())
   updatedAt    DateTime       @updatedAt
 
-  attendances  Attendance[]
-  stageLogs    ProductionStageLog[]
+  attendances     Attendance[]
+  stageLogs       ProductionStageLog[]
+  payrollPayments PayrollPayment[]
 
   @@map("employees")
 }
@@ -481,3 +509,143 @@ model DefectRecord {
   @@index([inspectionId])
   @@map("defect_records")
 }
+
+// ==============================================================================
+// 9. ACCOUNTING & FINANCIAL TRANSACTIONS
+// ==============================================================================
+
+model Invoice {
+  id            String        @id @default(cuid())
+  invoiceNumber String        @unique // INV-2026-0001
+  salesOrderId  String?
+  salesOrder    SalesOrder?   @relation(fields: [salesOrderId], references: [id])
+  customerId    String
+  customer      Customer      @relation(fields: [customerId], references: [id])
+  issueDate     DateTime      @default(now())
+  dueDate       DateTime?
+  status        InvoiceStatus @default(ISSUED)
+  subtotal      Float         @default(0.0)
+  taxAmount     Float         @default(0.0)
+  totalAmount   Float         @default(0.0)
+  paidAmount    Float         @default(0.0)
+  balanceDue    Float         @default(0.0)
+  notes         String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  items         InvoiceItem[]
+  payments      BuyerPayment[]
+
+  @@map("invoices")
+}
+
+model InvoiceItem {
+  id          String   @id @default(cuid())
+  invoiceId   String
+  invoice     Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  productId   String?
+  description String
+  quantity    Float
+  unitPrice   Float
+  totalPrice  Float
+
+  @@map("invoice_items")
+}
+
+model BuyerPayment {
+  id              String        @id @default(cuid())
+  paymentNumber   String        @unique // PAY-2026-0001
+  invoiceId       String
+  invoice         Invoice       @relation(fields: [invoiceId], references: [id])
+  amount          Float
+  paymentDate     DateTime      @default(now())
+  paymentMethod   PaymentMethod @default(BANK_TRANSFER)
+  referenceNumber String?
+  notes           String?
+  createdAt       DateTime      @default(now())
+
+  @@map("buyer_payments")
+}
+
+model SupplierBill {
+  id              String        @id @default(cuid())
+  billNumber      String        @unique // BILL-2026-0001
+  supplierId      String
+  supplier        Supplier      @relation(fields: [supplierId], references: [id])
+  purchaseOrderId String?
+  purchaseOrder   PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id])
+  billDate        DateTime      @default(now())
+  dueDate         DateTime?
+  status          BillStatus    @default(POSTED)
+  totalAmount     Float         @default(0.0)
+  paidAmount      Float         @default(0.0)
+  balanceDue      Float         @default(0.0)
+  notes           String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  items           SupplierBillItem[]
+  payments        SupplierPayment[]
+
+  @@map("supplier_bills")
+}
+
+model SupplierBillItem {
+  id          String       @id @default(cuid())
+  billId      String
+  bill        SupplierBill @relation(fields: [billId], references: [id], onDelete: Cascade)
+  productId   String?
+  description String
+  quantity    Float
+  unitPrice   Float
+  totalPrice  Float
+
+  @@map("supplier_bill_items")
+}
+
+model SupplierPayment {
+  id              String        @id @default(cuid())
+  paymentNumber   String        @unique // SPAY-2026-0001
+  billId          String
+  bill            SupplierBill  @relation(fields: [billId], references: [id])
+  amount          Float
+  paymentDate     DateTime      @default(now())
+  paymentMethod   PaymentMethod @default(BANK_TRANSFER)
+  referenceNumber String?
+  notes           String?
+  createdAt       DateTime      @default(now())
+
+  @@map("supplier_payments")
+}
+
+model PayrollPayment {
+  id              String        @id @default(cuid())
+  payoutNumber    String        @unique // PAYROLL-2026-0001
+  month           String        // YYYY-MM
+  employeeId      String?
+  employee        Employee?     @relation(fields: [employeeId], references: [id])
+  totalShifts     Int           @default(0)
+  amountPaid      Float
+  paidAt          DateTime      @default(now())
+  paymentMethod   PaymentMethod @default(BANK_TRANSFER)
+  referenceNumber String?
+  notes           String?
+  createdAt       DateTime      @default(now())
+
+  @@map("payroll_payments")
+}
+
+model BusinessExpense {
+  id              String        @id @default(cuid())
+  expenseNumber   String        @unique // EXP-2026-0001
+  category        String        // Utilities, Maintenance, Transport, Supplies, Other
+  amount          Float
+  expenseDate     DateTime      @default(now())
+  paymentMethod   PaymentMethod @default(BANK_TRANSFER)
+  referenceNumber String?
+  notes           String?
+  createdAt       DateTime      @default(now())
+
+  @@map("business_expenses")
+}
+

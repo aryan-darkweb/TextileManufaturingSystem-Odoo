@@ -3,11 +3,13 @@ import { Navbar } from './components/Navbar';
 import { HealthModal } from './components/HealthModal';
 import { ModuleGrid } from './components/ModuleGrid';
 import { InventoryView } from './components/InventoryView';
-import { SalesOrdersView } from './components/SalesOrdersView';
+import { BuyerManagementView } from './components/BuyerManagementView';
 import { PurchaseOrdersView } from './components/PurchaseOrdersView';
 import { DispatchView } from './components/DispatchView';
 import { FactoryOpsView } from './components/factory/FactoryOpsView';
 import { DashboardView } from './components/DashboardView';
+import { TransactionsView } from './components/TransactionsView';
+import { OwnerFinanceView } from './components/OwnerFinanceView';
 import { api } from './services/api';
 
 export function App() {
@@ -82,10 +84,11 @@ export function App() {
             onOpenHealth={() => setIsHealthModalOpen(true)}
           />
         )}
-        {activeTab === 'sales' && (
-          <SalesOrdersView
+        {(activeTab === 'buyers' || activeTab === 'sales') && (
+          <BuyerManagementView
             dbConnected={dbConnected}
             onOpenHealth={() => setIsHealthModalOpen(true)}
+            setActiveTab={setActiveTab}
           />
         )}
         {activeTab === 'purchase' && (
@@ -128,6 +131,19 @@ export function App() {
             initialTab="hr"
           />
         )}
+        {activeTab === 'transactions' && (
+          <TransactionsView
+            dbConnected={dbConnected}
+            onOpenHealth={() => setIsHealthModalOpen(true)}
+          />
+        )}
+        {activeTab === 'finance' && (
+          <OwnerFinanceView
+            dbConnected={dbConnected}
+            onOpenHealth={() => setIsHealthModalOpen(true)}
+            setActiveTab={setActiveTab}
+          />
+        )}
         {activeTab === 'dashboard' && <DashboardView setActiveTab={setActiveTab} />}
       </main>
 
@@ -138,15 +154,17 @@ export function App() {
             <span className="font-bold text-[#503568]">TextileFlow</span> — Textile Mills Operations & Supply Chain
           </div>
           <div className="flex items-center gap-4 text-sm text-[#766D82]">
-            <span>Inventory</span>
+            <span>Buyers</span>
             <span>•</span>
-            <span>Sales</span>
+            <span>Inventory</span>
             <span>•</span>
             <span>Purchases</span>
             <span>•</span>
             <span>Dispatch</span>
             <span>•</span>
-            <span>Factory Ops</span>
+            <span>Transactions</span>
+            <span>•</span>
+            <span>Finance</span>
           </div>
         </div>
       </footer>

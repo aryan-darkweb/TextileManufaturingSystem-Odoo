@@ -1,15 +1,188 @@
 const { prisma } = require('../config/prisma');
 
+/**
+ * Derive meaningful, substantiateable factory & fulfillment workflow stage.
+ * Never guessed from a manual dropdown; calculated from production, quality, and dispatches.
+ */
+async function deriveOrderWorkflowStatus(orderOrId) {
+  let order = orderOrId;
+  if (typeof orderOrId === 'string') {
+    order = await prisma.salesOrder.findUnique({
+      where: { id: orderOrId },
+      include: {
+        items: { include: { product: true } },
+        productionOrders: { include: { inspections: true } },
+        dispatchRecords: true
+      }
+    });
+  }
+
+  if (!order) {
+    return {
+      stageKey: 'ORDER_RECEIVED',
+      stage: 'ORDER_RECEIVED',
+      stageLabel: 'Order Received & Confirmed',
+      label: 'Order Received & Confirmed',
+      badgeColor: 'purple',
+      progressPct: 10,
+      progressPercent: 10
+    };
+  }
+
+  // 1. Dispatches
+  const dispatches = order.dispatchRecords || [];
+  if (dispatches.some((d) => d.status === 'DELIVERED')) {
+    return {
+      stageKey: 'DELIVERED',
+      stage: 'DELIVERED',
+      stageLabel: 'Delivered to Buyer',
+      label: 'Delivered to Buyer',
+      badgeColor: 'emerald',
+      progressPct: 100,
+      progressPercent: 100
+    };
+  }
+  if (dispatches.some((d) => d.status === 'DISPATCHED') || order.status === 'DISPATCHED') {
+    return {
+      stageKey: 'DISPATCHED',
+      stage: 'DISPATCHED',
+      stageLabel: 'Dispatched (Gate Pass Cleared)',
+      label: 'Dispatched (Gate Pass Cleared)',
+      badgeColor: 'emerald',
+      progressPct: 100,
+      progressPercent: 100
+    };
+  }
+
+  // 2. Production Orders & Quality Inspections
+  const pos = order.productionOrders || [];
+  if (pos.length > 0) {
+    const allInspections = pos.flatMap((p) => p.inspections || []);
+
+    if (allInspections.some((i) => i.status === 'REWORK')) {
+      return {
+        stageKey: 'REWORK_REQUIRED',
+        stage: 'REWORK_REQUIRED',
+        stageLabel: 'Rework Required (QC Defects Found)',
+        label: 'Rework Required (QC Defects Found)',
+        badgeColor: 'amber',
+        progressPct: 80,
+        progressPercent: 80
+      };
+    }
+    if (allInspections.some((i) => i.status === 'REJECTED')) {
+      return {
+        stageKey: 'QUALITY_REJECTED',
+        stage: 'QUALITY_REJECTED',
+        stageLabel: 'Quality Hold (Rolls Rejected)',
+        label: 'Quality Hold (Rolls Rejected)',
+        badgeColor: 'rose',
+        progressPct: 80,
+        progressPercent: 80
+      };
+    }
+
+    const passedRolls = allInspections.filter((i) => i.status === 'PASSED').length;
+    const allFinished = pos.every((p) => p.status === 'COMPLETED' || p.stage === 'COMPLETED');
+
+    if (allFinished && passedRolls > 0) {
+      return {
+        stageKey: 'READY_FOR_DISPATCH',
+        stage: 'READY_FOR_DISPATCH',
+        stageLabel: `Ready for Dispatch (${passedRolls} Rolls Approved)`,
+        label: `Ready for Dispatch (${passedRolls} Rolls Approved)`,
+        badgeColor: 'violet',
+        progressPct: 95,
+        progressPercent: 95
+      };
+    }
+
+    if (passedRolls > 0 && !allFinished) {
+      return {
+        stageKey: 'QUALITY_APPROVED_PARTIAL',
+        stage: 'QUALITY_APPROVED_PARTIAL',
+        stageLabel: `Quality Approved (${passedRolls} Rolls Passed)`,
+        label: `Quality Approved (${passedRolls} Rolls Passed)`,
+        badgeColor: 'violet',
+        progressPct: 85,
+        progressPercent: 85
+      };
+    }
+
+    // Active production stage
+    const activePo = pos.find((p) => p.status === 'IN_PROGRESS') || pos[0];
+    const stageName = activePo.stage || 'SPINNING';
+    const stageDisplay = stageName.charAt(0) + stageName.slice(1).toLowerCase();
+
+    let targetTotal = 0;
+    let producedTotal = 0;
+    for (const p of pos) {
+      targetTotal += p.targetQuantity || 0;
+      producedTotal += p.producedQuantity || 0;
+    }
+    const pct = targetTotal > 0 ? Math.min(90, Math.round((producedTotal / targetTotal) * 100)) : 40;
+
+    return {
+      stageKey: 'MANUFACTURING_IN_PROGRESS',
+      stage: 'MANUFACTURING_IN_PROGRESS',
+      stageLabel: `Manufacturing in Progress (${stageDisplay})`,
+      label: `Manufacturing in Progress (${stageDisplay})`,
+      badgeColor: 'indigo',
+      progressPct: Math.max(25, pct),
+      progressPercent: Math.max(25, pct)
+    };
+  }
+
+  // 3. Pre-production / Stock availability check
+  const items = order.items || [];
+  const allStockAvailable = items.length > 0 && items.every((it) => (it.product?.currentStock || 0) >= it.quantity);
+
+  if (allStockAvailable) {
+    return {
+      stageKey: 'MATERIAL_CHECKED',
+      stage: 'MATERIAL_CHECKED',
+      stageLabel: 'Stock Available in Warehouse',
+      label: 'Stock Available in Warehouse',
+      badgeColor: 'sky',
+      progressPct: 20,
+      progressPercent: 20
+    };
+  }
+
+  const anyStockShort = items.some((it) => (it.product?.currentStock || 0) < it.quantity);
+  if (anyStockShort && items.length > 0) {
+    return {
+      stageKey: 'AWAITING_MATERIALS',
+      stage: 'AWAITING_MATERIALS',
+      stageLabel: 'Awaiting Materials / Inward Intake',
+      label: 'Awaiting Materials / Inward Intake',
+      badgeColor: 'amber',
+      progressPct: 15,
+      progressPercent: 15
+    };
+  }
+
+  return {
+    stageKey: 'ORDER_RECEIVED',
+    stage: 'ORDER_RECEIVED',
+    stageLabel: 'Order Received & Confirmed',
+    label: 'Order Received & Confirmed',
+    badgeColor: 'purple',
+    progressPct: 10,
+    progressPercent: 10
+  };
+}
+
 async function listSalesOrders(filters = {}) {
   const where = {};
-  if (filters.status) {
+  if (filters.status && filters.status !== 'ALL') {
     where.status = filters.status;
   }
   if (filters.customerId) {
     where.customerId = filters.customerId;
   }
 
-  return await prisma.salesOrder.findMany({
+  const orders = await prisma.salesOrder.findMany({
     where,
     orderBy: { createdAt: 'desc' },
     include: {
@@ -28,11 +201,8 @@ async function listSalesOrders(filters = {}) {
         }
       },
       productionOrders: {
-        select: {
-          id: true,
-          orderNumber: true,
-          stage: true,
-          status: true
+        include: {
+          inspections: true
         }
       },
       dispatchRecords: {
@@ -40,15 +210,40 @@ async function listSalesOrders(filters = {}) {
           id: true,
           dispatchNumber: true,
           status: true,
-          dispatchedAt: true
+          dispatchedAt: true,
+          dispatchedRollCount: true
+        }
+      },
+      invoices: {
+        select: {
+          id: true,
+          invoiceNumber: true,
+          totalAmount: true,
+          paidAmount: true,
+          balanceDue: true,
+          status: true
         }
       }
     }
   });
+
+  return orders.map((ord) => {
+    const totalInvoiced = ord.invoices.reduce((s, inv) => s + (inv.totalAmount || 0), 0);
+    const totalPaid = ord.invoices.reduce((s, inv) => s + (inv.paidAmount || 0), 0);
+    const balanceDue = Math.max(0, totalInvoiced - totalPaid);
+
+    return {
+      ...ord,
+      workflowStage: deriveOrderWorkflowStatus(ord),
+      totalInvoiced: Math.round(totalInvoiced * 100) / 100,
+      totalPaid: Math.round(totalPaid * 100) / 100,
+      balanceDue: Math.round(balanceDue * 100) / 100
+    };
+  });
 }
 
 async function getSalesOrderById(id) {
-  return await prisma.salesOrder.findUnique({
+  const order = await prisma.salesOrder.findUnique({
     where: { id },
     include: {
       customer: true,
@@ -60,38 +255,60 @@ async function getSalesOrderById(id) {
       productionOrders: {
         include: {
           machine: true,
-          inspections: true
+          inspections: true,
+          stageLogs: { include: { operator: true, machine: true } }
         }
       },
-      dispatchRecords: true
+      dispatchRecords: true,
+      invoices: {
+        include: { payments: true }
+      }
     }
   });
+
+  if (!order) return null;
+
+  const totalInvoiced = order.invoices.reduce((s, inv) => s + (inv.totalAmount || 0), 0);
+  const totalPaid = order.invoices.reduce((s, inv) => s + (inv.paidAmount || 0), 0);
+  const balanceDue = Math.max(0, totalInvoiced - totalPaid);
+
+  return {
+    ...order,
+    workflowStage: deriveOrderWorkflowStatus(order),
+    totalInvoiced: Math.round(totalInvoiced * 100) / 100,
+    totalPaid: Math.round(totalPaid * 100) / 100,
+    balanceDue: Math.round(balanceDue * 100) / 100
+  };
 }
 
 async function createSalesOrder(data) {
   return await prisma.$transaction(async (tx) => {
-    // 1. Resolve or create customer
+    // 1. Resolve or create customer/buyer
     let customerId = data.customerId;
     if (!customerId) {
-      if (!data.customerName || !data.customerName.trim()) {
+      if (!data.customerName) {
         const err = new Error('Either customerId or customerName is required');
         err.statusCode = 400;
         throw err;
       }
-      if (data.customerPhone) {
-        const cleanPhone = String(data.customerPhone).trim();
-        if (!/^\d{10}$/.test(cleanPhone)) {
-          const err = new Error('Customer phone number must contain exactly 10 numeric digits');
-          err.statusCode = 400;
-          throw err;
-        }
+      if (!data.customerPhone) {
+        const err = new Error('Buyer phone number is required and must be exactly 10 numeric digits');
+        err.statusCode = 400;
+        throw err;
       }
+      const cleanPhone = String(data.customerPhone).trim();
+      if (!/^\d{10}$/.test(cleanPhone)) {
+        const err = new Error('Phone number must contain exactly 10 numeric digits (e.g. 9876543210)');
+        err.statusCode = 400;
+        throw err;
+      }
+
       const newCustomer = await tx.customer.create({
         data: {
           name: data.customerName.trim(),
           companyName: data.companyName ? data.companyName.trim() : null,
           email: data.customerEmail ? data.customerEmail.trim() : null,
-          phone: data.customerPhone ? String(data.customerPhone).trim() : null,
+          phone: cleanPhone,
           address: data.customerAddress ? data.customerAddress.trim() : null
         }
       });
@@ -180,7 +397,7 @@ async function createSalesOrder(data) {
         orderNumber,
         customerId,
         deliveryDeadline: deadlineDate,
-        status: data.status || 'PENDING',
+        status: data.status || 'CONFIRMED',
         totalAmount: calculatedTotal,
         notes: data.notes || null,
         items: {
@@ -202,9 +419,18 @@ async function createSalesOrder(data) {
 }
 
 async function updateOrderStatus(id, status) {
-  const validStatuses = ['PENDING', 'CONFIRMED', 'IN_PRODUCTION', 'READY_TO_SHIP', 'DISPATCHED', 'COMPLETED', 'CANCELLED'];
-  if (!validStatuses.includes(status)) {
-    throw new Error(`Invalid status: ${status}. Must be one of ${validStatuses.join(', ')}`);
+  const allowed = ['PENDING', 'CONFIRMED', 'IN_PRODUCTION', 'READY_TO_SHIP', 'DISPATCHED', 'COMPLETED', 'CANCELLED'];
+  if (!allowed.includes(status)) {
+    const err = new Error(`Invalid status. Allowed values: ${allowed.join(', ')}`);
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const order = await prisma.salesOrder.findUnique({ where: { id } });
+  if (!order) {
+    const err = new Error(`Sales order with ID ${id} not found`);
+    err.statusCode = 404;
+    throw err;
   }
 
   return await prisma.salesOrder.update({
@@ -212,22 +438,106 @@ async function updateOrderStatus(id, status) {
     data: { status },
     include: {
       customer: true,
-      items: {
-        include: { product: true }
-      }
+      items: true
     }
   });
 }
 
 async function listCustomers() {
-  return await prisma.customer.findMany({
+  const customers = await prisma.customer.findMany({
     orderBy: { name: 'asc' },
     include: {
       _count: {
-        select: { salesOrders: true }
+        select: { salesOrders: true, invoices: true }
+      },
+      salesOrders: {
+        select: { totalAmount: true }
+      },
+      invoices: {
+        select: { totalAmount: true, paidAmount: true, balanceDue: true }
       }
     }
   });
+
+  return customers.map((c) => {
+    const totalOrderValue = c.salesOrders.reduce((s, o) => s + (o.totalAmount || 0), 0);
+    const totalInvoiced = c.invoices.reduce((s, i) => s + (i.totalAmount || 0), 0);
+    const totalPaid = c.invoices.reduce((s, i) => s + (i.paidAmount || 0), 0);
+    const balanceDue = Math.max(0, totalInvoiced - totalPaid);
+
+    return {
+      id: c.id,
+      name: c.name,
+      companyName: c.companyName,
+      email: c.email,
+      phone: c.phone,
+      address: c.address,
+      createdAt: c.createdAt,
+      totalOrdersCount: c._count.salesOrders,
+      totalOrderValue: Math.round(totalOrderValue * 100) / 100,
+      totalInvoiced: Math.round(totalInvoiced * 100) / 100,
+      totalPaid: Math.round(totalPaid * 100) / 100,
+      balanceDue: Math.round(balanceDue * 100) / 100
+    };
+  });
+}
+
+async function getCustomerById(id) {
+  const customer = await prisma.customer.findUnique({
+    where: { id },
+    include: {
+      salesOrders: {
+        orderBy: { createdAt: 'desc' },
+        include: {
+          items: { include: { product: true } },
+          productionOrders: { include: { inspections: true } },
+          dispatchRecords: true,
+          invoices: { include: { payments: true } }
+        }
+      },
+      invoices: {
+        orderBy: { createdAt: 'desc' },
+        include: { payments: true }
+      }
+    }
+  });
+
+  if (!customer) {
+    const err = new Error(`Buyer customer with ID ${id} not found`);
+    err.statusCode = 404;
+    throw err;
+  }
+
+  const enrichedOrders = customer.salesOrders.map((ord) => {
+    const totalInvoiced = ord.invoices.reduce((s, inv) => s + (inv.totalAmount || 0), 0);
+    const totalPaid = ord.invoices.reduce((s, inv) => s + (inv.paidAmount || 0), 0);
+    const balanceDue = Math.max(0, totalInvoiced - totalPaid);
+
+    return {
+      ...ord,
+      workflowStage: deriveOrderWorkflowStatus(ord),
+      totalInvoiced: Math.round(totalInvoiced * 100) / 100,
+      totalPaid: Math.round(totalPaid * 100) / 100,
+      balanceDue: Math.round(balanceDue * 100) / 100
+    };
+  });
+
+  const totalOrderValue = enrichedOrders.reduce((s, o) => s + (o.totalAmount || 0), 0);
+  const totalInvoicedAmount = customer.invoices.reduce((s, inv) => s + (inv.totalAmount || 0), 0);
+  const totalPaidAmount = customer.invoices.reduce((s, inv) => s + (inv.paidAmount || 0), 0);
+  const totalOutstandingBalance = Math.max(0, totalInvoicedAmount - totalPaidAmount);
+
+  return {
+    ...customer,
+    salesOrders: enrichedOrders,
+    financialSummary: {
+      totalOrdersCount: enrichedOrders.length,
+      totalOrderValue: Math.round(totalOrderValue * 100) / 100,
+      totalInvoicedAmount: Math.round(totalInvoicedAmount * 100) / 100,
+      totalPaidAmount: Math.round(totalPaidAmount * 100) / 100,
+      totalOutstandingBalance: Math.round(totalOutstandingBalance * 100) / 100
+    }
+  };
 }
 
 async function createCustomer(data) {
@@ -259,11 +569,44 @@ async function createCustomer(data) {
   });
 }
 
+async function updateCustomer(id, data) {
+  const existing = await prisma.customer.findUnique({ where: { id } });
+  if (!existing) {
+    const err = new Error(`Buyer customer with ID ${id} not found`);
+    err.statusCode = 404;
+    throw err;
+  }
+
+  const updateData = {};
+  if (data.name && data.name.trim()) updateData.name = data.name.trim();
+  if (data.companyName !== undefined) updateData.companyName = data.companyName ? data.companyName.trim() : null;
+  if (data.email !== undefined) updateData.email = data.email ? data.email.trim() : null;
+  if (data.address !== undefined) updateData.address = data.address ? data.address.trim() : null;
+
+  if (data.phone) {
+    const cleanPhone = String(data.phone).trim();
+    if (!/^\d{10}$/.test(cleanPhone)) {
+      const err = new Error('Phone number must contain exactly 10 numeric digits (e.g. 9876543210)');
+      err.statusCode = 400;
+      throw err;
+    }
+    updateData.phone = cleanPhone;
+  }
+
+  return await prisma.customer.update({
+    where: { id },
+    data: updateData
+  });
+}
+
 module.exports = {
   listSalesOrders,
   getSalesOrderById,
   createSalesOrder,
   updateOrderStatus,
   listCustomers,
-  createCustomer
+  getCustomerById,
+  createCustomer,
+  updateCustomer,
+  deriveOrderWorkflowStatus
 };

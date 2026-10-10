@@ -69,11 +69,31 @@ async function createCustomer(req, res, next) {
   }
 }
 
+async function getCustomerById(req, res, next) {
+  try {
+    const customer = await salesService.getCustomerById(req.params.id);
+    return success(res, customer, 'Buyer profile retrieved successfully');
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function updateCustomer(req, res, next) {
+  try {
+    const updated = await salesService.updateCustomer(req.params.id, req.body);
+    return success(res, updated, 'Buyer profile updated successfully');
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   getSalesOrders,
   getSalesOrderById,
   createSalesOrder,
   updateStatus,
   getCustomers,
-  createCustomer
+  getCustomerById,
+  createCustomer,
+  updateCustomer
 };

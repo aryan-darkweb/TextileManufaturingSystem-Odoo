@@ -123,6 +123,24 @@ async function getFactoryToday(req, res, next) {
   }
 }
 
+async function getMachineDailyOutput(req, res, next) {
+  try {
+    const report = await manufacturingService.getMachineDailyOutput(req.query);
+    return success(res, report, 'Machine daily output report retrieved successfully');
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function getAllMaterialShortages(req, res, next) {
+  try {
+    const shortages = await manufacturingService.getAllMaterialShortages(req.query);
+    return success(res, shortages, 'Material shortages retrieved successfully');
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   createProductionOrder,
   getProductionOrders,
@@ -135,5 +153,8 @@ module.exports = {
   getMaterialRequirements,
   getMachines,
   updateMachineStatus,
-  getFactoryToday
+  getFactoryToday,
+  getMachineDailyOutput,
+  getAllMaterialShortages
 };
+

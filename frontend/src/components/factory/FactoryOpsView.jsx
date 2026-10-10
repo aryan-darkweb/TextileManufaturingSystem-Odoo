@@ -11,6 +11,7 @@ import { FactoryTodayView } from './FactoryTodayView';
 import { ProductionView } from './ProductionView';
 import { QualityView } from './QualityView';
 import { HrView } from './HrView';
+import { MachineDailyOutputView } from './MachineDailyOutputView';
 
 export function FactoryOpsView({ dbConnected, onOpenHealth, initialTab = 'today' }) {
   const [subTab, setSubTab] = useState(initialTab);
@@ -41,7 +42,7 @@ export function FactoryOpsView({ dbConnected, onOpenHealth, initialTab = 'today'
           </div>
 
           {/* Sub-tab Navigation Pills */}
-          <div className="flex items-center gap-1.5 bg-slate-200/70 p-1 rounded-xl self-start sm:self-auto border border-slate-300/70">
+          <div className="flex items-center gap-1.5 bg-slate-200/70 p-1 rounded-xl self-start sm:self-auto border border-slate-300/70 flex-wrap">
             <button
               onClick={() => setSubTab('today')}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
@@ -52,6 +53,18 @@ export function FactoryOpsView({ dbConnected, onOpenHealth, initialTab = 'today'
             >
               <Activity className="w-3.5 h-3.5 text-sky-600" />
               Factory Today
+            </button>
+
+            <button
+              onClick={() => setSubTab('machine-output')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                subTab === 'machine-output'
+                  ? 'bg-white text-slate-900 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Activity className="w-3.5 h-3.5 text-violet-600" />
+              Machine Daily Output
             </button>
 
             <button
@@ -97,9 +110,13 @@ export function FactoryOpsView({ dbConnected, onOpenHealth, initialTab = 'today'
       {subTab === 'today' && (
         <FactoryTodayView onSwitchTab={setSubTab} dbConnected={dbConnected} />
       )}
+      {subTab === 'machine-output' && (
+        <MachineDailyOutputView dbConnected={dbConnected} />
+      )}
       {subTab === 'production' && <ProductionView dbConnected={dbConnected} />}
       {subTab === 'quality' && <QualityView dbConnected={dbConnected} />}
       {subTab === 'hr' && <HrView dbConnected={dbConnected} />}
     </div>
   );
 }
+

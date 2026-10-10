@@ -27,7 +27,19 @@ router.get('/orders', salesController.getSalesOrders);
 router.post('/orders', validateBody(validateOrderInput), salesController.createSalesOrder);
 router.get('/orders/:id', salesController.getSalesOrderById);
 router.patch('/orders/:id/status', salesController.updateStatus);
+
+// Customer / Buyer Directory & Profiles
 router.get('/customers', salesController.getCustomers);
 router.post('/customers', validateBody(validateCustomerInput), salesController.createCustomer);
+router.get('/customers/:id', salesController.getCustomerById);
+router.put('/customers/:id', validateBody(validateCustomerInput), salesController.updateCustomer);
+router.patch('/customers/:id', salesController.updateCustomer);
+
+// Buyer aliases (explicitly supporting buyer semantics)
+router.get('/buyers', salesController.getCustomers);
+router.post('/buyers', validateBody(validateCustomerInput), salesController.createCustomer);
+router.get('/buyers/:id', salesController.getCustomerById);
+router.put('/buyers/:id', validateBody(validateCustomerInput), salesController.updateCustomer);
+router.patch('/buyers/:id', salesController.updateCustomer);
 
 module.exports = router;

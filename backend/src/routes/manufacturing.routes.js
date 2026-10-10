@@ -55,6 +55,7 @@ function validateMachineStatus(body) {
 router.get('/factory-today', manufacturingController.getFactoryToday);
 router.get('/status/by-sales-order/:salesOrderId', manufacturingController.getStatusBySalesOrder);
 router.get('/materials/requirement-vs-available/:productionOrderId', manufacturingController.getMaterialRequirements);
+router.get('/materials/shortages', manufacturingController.getAllMaterialShortages);
 
 // Production Order CRUD & lifecycle
 router.get('/orders', manufacturingController.getProductionOrders);
@@ -67,8 +68,10 @@ router.patch('/orders/:id/status', validateBody(validateUpdateStatus), manufactu
 router.post('/orders/:id/stages/start', validateBody(validateStartStage), manufacturingController.startStage);
 router.post('/orders/:id/stages/complete', validateBody(validateCompleteStage), manufacturingController.completeStage);
 
-// Machines
+// Machines & Daily Output
+router.get('/machines/daily-output', manufacturingController.getMachineDailyOutput);
 router.get('/machines', manufacturingController.getMachines);
 router.patch('/machines/:id/status', validateBody(validateMachineStatus), manufacturingController.updateMachineStatus);
+
 
 module.exports = router;

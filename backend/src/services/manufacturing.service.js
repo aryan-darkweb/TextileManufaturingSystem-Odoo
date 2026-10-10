@@ -847,6 +847,373 @@ async function getFactoryToday() {
   };
 }
 
+/**
+ * Machine Daily Output report with date, stage, and machine filters.
+ * Aggregates from completed ProductionStageLogs and prevents double-counting
+ * across manufacturing stages by preserving distinct stage outputs and units.
+ */
+async function getMachineDailyOutput(filters = {}) {
+  const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+
+  if (filters.date && !DATE_REGEX.test(filters.date)) {
+    const err = new Error('Invalid date format. Expected YYYY-MM-DD');
+    err.statusCode = 400;
+    throw err;
+  }
+  if (filters.startDate && !DATE_REGEX.test(filters.startDate)) {
+    const err = new Error('Invalid startDate format. Expected YYYY-MM-DD');
+    err.statusCode = 400;
+    throw err;
+  }
+  if (filters.endDate && !DATE_REGEX.test(filters.endDate)) {
+    const err = new Error('Invalid endDate format. Expected YYYY-MM-DD');
+    err.statusCode = 400;
+    throw err;
+  }
+  if (filters.startDate && filters.endDate && filters.startDate > filters.endDate) {
+    const err = new Error('startDate cannot be after endDate');
+    err.statusCode = 400;
+    throw err;
+  }
+  if (filters.stage && !['SPINNING', 'WEAVING', 'DYEING', 'FINISHING'].includes(filters.stage)) {
+    const err = new Error('Invalid stage filter. Allowed: SPINNING, WEAVING, DYEING, FINISHING');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  // Validate machine if machineId provided
+  if (filters.machineId) {
+    const m = await prisma.machine.findUnique({ where: { id: filters.machineId } });
+    if (!m) {
+      const err = new Error(`Machine not found with ID ${filters.machineId}`);
+      err.statusCode = 404;
+      throw err;
+    }
+  }
+
+  // Determine date bounds
+  let rangeStart = null;
+  let rangeEnd = null;
+
+  if (filters.date) {
+    rangeStart = new Date(`${filters.date}T00:00:00.000Z`);
+    rangeEnd = new Date(`${filters.date}T23:59:59.999Z`);
+  } else {
+    if (filters.startDate) {
+      rangeStart = new Date(`${filters.startDate}T00:00:00.000Z`);
+    }
+    if (filters.endDate) {
+      rangeEnd = new Date(`${filters.endDate}T23:59:59.999Z`);
+    }
+  }
+
+  // Fetch completed stage logs that have output
+  const whereLog = {
+    status: 'COMPLETED',
+    outputQuantity: { gt: 0 }
+  };
+
+  if (filters.machineId) {
+    whereLog.machineId = filters.machineId;
+  }
+  if (filters.stage) {
+    whereLog.stage = filters.stage;
+  }
+  if (rangeStart || rangeEnd) {
+    whereLog.completedAt = {};
+    if (rangeStart) whereLog.completedAt.gte = rangeStart;
+    if (rangeEnd) whereLog.completedAt.lte = rangeEnd;
+  }
+
+  const [stageLogs, machines] = await Promise.all([
+    prisma.productionStageLog.findMany({
+      where: whereLog,
+      include: {
+        machine: true,
+        productionOrder: {
+          include: {
+            product: true
+          }
+        }
+      },
+      orderBy: { completedAt: 'desc' }
+    }),
+    prisma.machine.findMany({
+      where: filters.machineId ? { id: filters.machineId } : {},
+      orderBy: { code: 'asc' }
+    })
+  ]);
+
+  // Aggregate by (machineId, date, stage)
+  const groupMap = new Map();
+
+  for (const log of stageLogs) {
+    // If no machine attached, skip or group under UNASSIGNED
+    const machineId = log.machineId || 'UNASSIGNED';
+    const logDate = log.completedAt
+      ? log.completedAt.toISOString().split('T')[0]
+      : log.createdAt.toISOString().split('T')[0];
+    const key = `${machineId}__${logDate}__${log.stage}`;
+
+    const unit =
+      log.stage === 'SPINNING'
+        ? 'KG'
+        : (log.productionOrder?.product?.unit || 'METER');
+
+    if (!groupMap.has(key)) {
+      groupMap.set(key, {
+        machineId: log.machine?.id || null,
+        machineCode: log.machine?.code || 'UNASSIGNED',
+        machineName: log.machine?.name || 'Unassigned Machine',
+        machineType: log.machine?.type || log.stage,
+        machineStatus: log.machine?.status || 'IDLE',
+        capacityPerShift: log.machine?.capacityPerShift || 100.0,
+        date: logDate,
+        stage: log.stage,
+        unit,
+        totalOutputQuantity: 0.0,
+        totalWasteQuantity: 0.0,
+        totalInputQuantity: 0.0,
+        runCount: 0,
+        productionOrders: new Set(),
+        records: []
+      });
+    }
+
+    const group = groupMap.get(key);
+    group.totalOutputQuantity += log.outputQuantity;
+    group.totalWasteQuantity += log.wasteQuantity;
+    group.totalInputQuantity += log.inputQuantity;
+    group.runCount += 1;
+    if (log.productionOrder?.orderNumber) {
+      group.productionOrders.add(log.productionOrder.orderNumber);
+    }
+    group.records.push({
+      logId: log.id,
+      orderNumber: log.productionOrder?.orderNumber,
+      productName: log.productionOrder?.product?.name,
+      outputQuantity: log.outputQuantity,
+      wasteQuantity: log.wasteQuantity,
+      completedAt: log.completedAt
+    });
+  }
+
+  // Format aggregated records
+  const records = Array.from(groupMap.values()).map((g) => ({
+    machineId: g.machineId,
+    machineCode: g.machineCode,
+    machineName: g.machineName,
+    machineType: g.machineType,
+    machineStatus: g.machineStatus,
+    capacityPerShift: g.capacityPerShift,
+    date: g.date,
+    stage: g.stage,
+    unit: g.unit,
+    totalOutputQuantity: parseFloat(g.totalOutputQuantity.toFixed(2)),
+    totalWasteQuantity: parseFloat(g.totalWasteQuantity.toFixed(2)),
+    totalInputQuantity: parseFloat(g.totalInputQuantity.toFixed(2)),
+    runCount: g.runCount,
+    productionOrders: Array.from(g.productionOrders),
+    utilizationPercent:
+      g.capacityPerShift > 0
+        ? parseFloat(((g.totalOutputQuantity / g.capacityPerShift) * 100).toFixed(1))
+        : 0.0
+  }));
+
+  // Build summary separated by units and stages (NO double counting across stages)
+  const totalOutputByUnit = {};
+  const totalWasteByUnit = {};
+  const stageBreakdown = {
+    SPINNING: { output: 0, waste: 0, runs: 0, unit: 'KG' },
+    WEAVING: { output: 0, waste: 0, runs: 0, unit: 'METER' },
+    DYEING: { output: 0, waste: 0, runs: 0, unit: 'METER' },
+    FINISHING: { output: 0, waste: 0, runs: 0, unit: 'METER' }
+  };
+
+  for (const r of records) {
+    totalOutputByUnit[r.unit] = (totalOutputByUnit[r.unit] || 0) + r.totalOutputQuantity;
+    totalWasteByUnit[r.unit] = (totalWasteByUnit[r.unit] || 0) + r.totalWasteQuantity;
+
+    if (stageBreakdown[r.stage]) {
+      stageBreakdown[r.stage].output += r.totalOutputQuantity;
+      stageBreakdown[r.stage].waste += r.totalWasteQuantity;
+      stageBreakdown[r.stage].runs += r.runCount;
+      stageBreakdown[r.stage].unit = r.unit;
+    }
+  }
+
+  // Distinct machines with recorded production
+  const activeMachineIds = new Set(records.filter((r) => r.machineId).map((r) => r.machineId));
+
+  // Machine status overview clearly distinguishing status from recorded output
+  const machineOverview = machines.map((m) => {
+    const machineRecords = records.filter((r) => r.machineId === m.id);
+    const hasProduction = machineRecords.length > 0;
+    const recordedOutput = machineRecords.reduce((sum, r) => sum + r.totalOutputQuantity, 0);
+    const recordedRuns = machineRecords.reduce((sum, r) => sum + r.runCount, 0);
+    const unit = machineRecords[0]?.unit || (m.type === 'SPINNING' ? 'KG' : 'METER');
+
+    return {
+      machineId: m.id,
+      code: m.code,
+      name: m.name,
+      type: m.type,
+      status: m.status, // Current operational status (IDLE, RUNNING, MAINTENANCE, BREAKDOWN)
+      capacityPerShift: m.capacityPerShift,
+      hasProduction,
+      recordedOutput: parseFloat(recordedOutput.toFixed(2)),
+      recordedRuns,
+      unit
+    };
+  });
+
+  return {
+    filters: {
+      date: filters.date || null,
+      startDate: filters.startDate || null,
+      endDate: filters.endDate || null,
+      machineId: filters.machineId || null,
+      stage: filters.stage || null
+    },
+    summary: {
+      totalRuns: records.reduce((sum, r) => sum + r.runCount, 0),
+      totalOutputByUnit,
+      totalWasteByUnit,
+      stageBreakdown,
+      activeMachinesCount: activeMachineIds.size,
+      totalMachinesCount: machines.length
+    },
+    records,
+    machineOverview
+  };
+}
+
+/**
+ * Scan active production orders and return all raw material shortages.
+ * Calculates needed = planned - consumed (or 0 if deducted), compares against
+ * current warehouse stock, and aggregates shortages across orders.
+ */
+async function getAllMaterialShortages(filters = {}) {
+  const whereOrder = {
+    status: { in: ['PLANNED', 'IN_PROGRESS', 'PAUSED'] }
+  };
+  if (filters.productionOrderId) {
+    whereOrder.id = filters.productionOrderId;
+  }
+
+  const [orders, suppliers, openPurchaseOrders] = await Promise.all([
+    prisma.productionOrder.findMany({
+      where: whereOrder,
+      include: {
+        product: true,
+        materialConsumptions: {
+          include: {
+            rawMaterial: true
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    }),
+    prisma.supplier.findMany({
+      orderBy: { name: 'asc' },
+      select: { id: true, name: true, phone: true, email: true, yarnTypesSupplied: true }
+    }),
+    prisma.purchaseOrder.findMany({
+      where: {
+        status: { in: ['DRAFT', 'ORDERED', 'PARTIALLY_RECEIVED'] }
+      },
+      include: {
+        items: true,
+        supplier: { select: { id: true, name: true } }
+      }
+    })
+  ]);
+
+  // Aggregate shortages by raw material ID
+  const shortageMap = new Map();
+
+  for (const order of orders) {
+    for (const m of order.materialConsumptions) {
+      const availableStock = m.rawMaterial.currentStock;
+      const required = m.plannedQuantity;
+      const consumed = m.actualQuantity;
+      const needed = m.isDeducted ? 0 : Math.max(0, required - consumed);
+      const shortage = Math.max(0, needed - availableStock);
+
+      if (shortage > 0) {
+        const matId = m.rawMaterial.id;
+        if (!shortageMap.has(matId)) {
+          // Check for open POs for this material
+          const pendingPOs = openPurchaseOrders
+            .filter((po) => po.items.some((it) => it.productId === matId))
+            .map((po) => {
+              const poItem = po.items.find((it) => it.productId === matId);
+              return {
+                purchaseOrderId: po.id,
+                orderNumber: po.orderNumber,
+                status: po.status,
+                supplierName: po.supplier.name,
+                orderedQty: poItem?.orderedQty || 0,
+                receivedQty: poItem?.receivedQty || 0,
+                pendingQty: (poItem?.orderedQty || 0) - (poItem?.receivedQty || 0)
+              };
+            });
+
+          shortageMap.set(matId, {
+            materialId: m.rawMaterial.id,
+            materialCode: m.rawMaterial.code,
+            materialName: m.rawMaterial.name,
+            category: m.rawMaterial.category,
+            unit: m.unit,
+            unitCost: m.rawMaterial.unitCost,
+            availableStock: m.rawMaterial.currentStock,
+            minimumStock: m.rawMaterial.minimumStock,
+            totalNeeded: 0,
+            shortageQuantity: 0,
+            affectedOrders: [],
+            pendingPurchaseOrders: pendingPOs,
+            hasPendingPurchase: pendingPOs.length > 0
+          });
+        }
+
+        const entry = shortageMap.get(matId);
+        entry.totalNeeded += needed;
+        entry.shortageQuantity += shortage;
+        entry.affectedOrders.push({
+          productionOrderId: order.id,
+          orderNumber: order.orderNumber,
+          stage: m.stage,
+          plannedQuantity: required,
+          consumedQuantity: consumed,
+          neededQuantity: needed,
+          orderShortage: shortage
+        });
+      }
+    }
+  }
+
+  const shortages = Array.from(shortageMap.values()).map((s) => ({
+    ...s,
+    totalNeeded: parseFloat(s.totalNeeded.toFixed(2)),
+    shortageQuantity: parseFloat(s.shortageQuantity.toFixed(2)),
+    estimatedReorderCost: parseFloat((s.shortageQuantity * s.unitCost).toFixed(2))
+  }));
+
+  const totalEstimatedCost = shortages.reduce((sum, s) => sum + s.estimatedReorderCost, 0);
+
+  return {
+    shortages,
+    suppliers,
+    summary: {
+      totalShortageMaterials: shortages.length,
+      totalAffectedOrders: new Set(
+        shortages.flatMap((s) => s.affectedOrders.map((o) => o.productionOrderId))
+      ).size,
+      totalEstimatedCost: parseFloat(totalEstimatedCost.toFixed(2))
+    }
+  };
+}
+
 module.exports = {
   createProductionOrder,
   listProductionOrders,
@@ -857,8 +1224,11 @@ module.exports = {
   updateOrderStatus,
   getStatusBySalesOrder,
   getMaterialRequirementVsAvailable,
+  getMachineDailyOutput,
+  getAllMaterialShortages,
   listMachines,
   updateMachineStatus,
   getFactoryToday,
   recordStockTransactionTx
 };
+

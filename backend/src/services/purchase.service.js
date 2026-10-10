@@ -186,30 +186,45 @@ async function createPurchaseOrder(data) {
  * Record goods receipt against a purchase order.
  * Updates stock through an atomic transaction, updates received quantities,
  * and sets the purchase order status to PARTIALLY_RECEIVED or RECEIVED.
+ * Row-level locking prevents duplicate receipts and concurrent stock corruption.
  */
 async function receiveGoods(purchaseOrderId, data) {
   const { receivedItems, notes, performedBy } = data;
   if (!Array.isArray(receivedItems) || receivedItems.length === 0) {
-    throw new Error('At least one item receipt is required');
+    const err = new Error('At least one item receipt is required');
+    err.statusCode = 400;
+    throw err;
   }
 
   return await prisma.$transaction(async (tx) => {
+    // 1. Acquire exclusive row lock in PostgreSQL to prevent concurrent race conditions
+    await tx.$executeRaw`SELECT id FROM purchase_orders WHERE id = ${purchaseOrderId} FOR UPDATE`;
+
+    // 2. Fetch fresh PO state
     const po = await tx.purchaseOrder.findUnique({
       where: { id: purchaseOrderId },
       include: { items: { include: { product: true } }, supplier: true }
     });
 
     if (!po) {
-      throw new Error(`Purchase order with ID ${purchaseOrderId} not found`);
+      const err = new Error(`Purchase order with ID ${purchaseOrderId} not found`);
+      err.statusCode = 404;
+      throw err;
     }
 
     if (po.status === 'RECEIVED') {
-      throw new Error('This purchase order has already been fully received');
+      const err = new Error('This purchase order has already been fully received');
+      err.statusCode = 409;
+      throw err;
     }
 
     if (po.status === 'CANCELLED') {
-      throw new Error('Cannot receive goods against a cancelled purchase order');
+      const err = new Error('Cannot receive goods against a cancelled purchase order');
+      err.statusCode = 409;
+      throw err;
     }
+
+    let itemsProcessed = 0;
 
     for (const receipt of receivedItems) {
       const qtyToReceive = parseFloat(receipt.quantity);
@@ -219,14 +234,18 @@ async function receiveGoods(purchaseOrderId, data) {
 
       const poItem = po.items.find((i) => i.id === receipt.itemId || i.productId === receipt.productId);
       if (!poItem) {
-        throw new Error(`Line item not found in this purchase order`);
+        const err = new Error(`Line item not found in this purchase order`);
+        err.statusCode = 404;
+        throw err;
       }
 
-      const remainingAllowed = poItem.orderedQty - poItem.receivedQty;
+      const remainingAllowed = parseFloat((poItem.orderedQty - poItem.receivedQty).toFixed(4));
       if (qtyToReceive > remainingAllowed) {
-        throw new Error(
+        const err = new Error(
           `Cannot receive ${qtyToReceive} for ${poItem.product.name}. Outstanding ordered quantity is only ${remainingAllowed}`
         );
+        err.statusCode = 409;
+        throw err;
       }
 
       const newReceivedQty = poItem.receivedQty + qtyToReceive;
@@ -237,14 +256,15 @@ async function receiveGoods(purchaseOrderId, data) {
         data: { receivedQty: newReceivedQty }
       });
 
-      // 2. Increase stock on Product
-      const newStock = poItem.product.currentStock + qtyToReceive;
+      // 2. Fetch fresh product inside lock and update stock
+      const freshProduct = await tx.product.findUnique({ where: { id: poItem.productId } });
+      const newStock = freshProduct.currentStock + qtyToReceive;
       await tx.product.update({
         where: { id: poItem.productId },
         data: { currentStock: newStock }
       });
 
-      // 3. Log Inventory Transaction
+      // 3. Log Inventory Transaction exactly once
       await tx.inventoryTransaction.create({
         data: {
           productId: poItem.productId,
@@ -256,6 +276,14 @@ async function receiveGoods(purchaseOrderId, data) {
           performedBy: performedBy || 'Warehouse Lead'
         }
       });
+
+      itemsProcessed++;
+    }
+
+    if (itemsProcessed === 0) {
+      const err = new Error('No valid positive quantities to receive were provided');
+      err.statusCode = 400;
+      throw err;
     }
 
     // Refresh PO items to evaluate new overall status
@@ -281,11 +309,165 @@ async function receiveGoods(purchaseOrderId, data) {
   });
 }
 
+/**
+ * Create a purchase order directly from a manufacturing material shortage.
+ * Strictly validates supplier, raw material, and quantity on the server.
+ * Prevents duplicate orders from repeated submissions/clicks.
+ * CRITICAL RULE: Never touches inventory stock. Stock only increases upon goods receipt.
+ */
+async function createPurchaseOrderFromShortage(data) {
+  const {
+    supplierId,
+    materialId,
+    quantity,
+    unitPrice,
+    productionOrderId,
+    notes,
+    expectedDeliveryDate,
+    idempotencyKey
+  } = data;
+
+  if (!supplierId) {
+    const err = new Error('supplierId is required');
+    err.statusCode = 400;
+    throw err;
+  }
+  if (!materialId) {
+    const err = new Error('materialId is required');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const qty = parseFloat(quantity);
+  if (isNaN(qty) || qty <= 0) {
+    const err = new Error('Order quantity must be a valid number greater than zero');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  // 1. Validate Supplier
+  const supplier = await prisma.supplier.findUnique({ where: { id: supplierId } });
+  if (!supplier) {
+    const err = new Error(`Supplier not found with ID ${supplierId}`);
+    err.statusCode = 404;
+    throw err;
+  }
+
+  // 2. Validate Material
+  const material = await prisma.product.findUnique({ where: { id: materialId } });
+  if (!material) {
+    const err = new Error(`Raw material product not found with ID ${materialId}`);
+    err.statusCode = 404;
+    throw err;
+  }
+
+  const price = unitPrice !== undefined && unitPrice !== null && unitPrice !== ''
+    ? parseFloat(unitPrice)
+    : material.unitCost;
+
+  if (isNaN(price) || price < 0) {
+    const err = new Error('Unit price must be a valid non-negative number');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  // 3. Duplicate protection / Idempotency Check (within 60 seconds or matching key)
+  const windowStart = new Date(Date.now() - 60000);
+  const duplicateConditions = [
+    {
+      supplierId,
+      createdAt: { gte: windowStart },
+      items: {
+        some: {
+          productId: material.id,
+          orderedQty: qty
+        }
+      }
+    }
+  ];
+
+  if (idempotencyKey) {
+    duplicateConditions.push({
+      notes: { contains: idempotencyKey }
+    });
+  }
+
+  const existingPO = await prisma.purchaseOrder.findFirst({
+    where: { OR: duplicateConditions },
+    include: {
+      supplier: true,
+      items: { include: { product: true } }
+    }
+  });
+
+  if (existingPO) {
+    return {
+      ...existingPO,
+      duplicatePrevented: true,
+      message: 'Duplicate purchase order prevented; existing order returned safely'
+    };
+  }
+
+  // 4. Create Purchase Order in an atomic transaction (NEVER touches inventory stock)
+  return await prisma.$transaction(async (tx) => {
+    const count = await tx.purchaseOrder.count();
+    const year = new Date().getFullYear();
+    const orderNumber = `PO-${year}-${String(count + 1).padStart(4, '0')}`;
+    const totalPrice = parseFloat((qty * price).toFixed(2));
+
+    const poNotesParts = [
+      `Shortage fulfillment for ${material.name} (${material.code})`
+    ];
+    if (productionOrderId) {
+      poNotesParts.push(`Linked to production order: ${productionOrderId}`);
+    }
+    if (idempotencyKey) {
+      poNotesParts.push(`[IdempotencyKey: ${idempotencyKey}]`);
+    }
+    if (notes) {
+      poNotesParts.push(notes.trim());
+    }
+
+    const newPO = await tx.purchaseOrder.create({
+      data: {
+        orderNumber,
+        supplierId,
+        status: 'ORDERED', // Stock remains completely untouched
+        orderDate: new Date(),
+        expectedDeliveryDate: expectedDeliveryDate ? new Date(expectedDeliveryDate) : null,
+        totalAmount: totalPrice,
+        notes: poNotesParts.join(' | '),
+        items: {
+          create: [
+            {
+              productId: material.id,
+              orderedQty: qty,
+              receivedQty: 0.0,
+              unitPrice: price,
+              totalPrice
+            }
+          ]
+        }
+      },
+      include: {
+        supplier: true,
+        items: {
+          include: { product: true }
+        }
+      }
+    });
+
+    return newPO;
+  });
+}
+
 module.exports = {
   listSuppliers,
   createSupplier,
   listPurchaseOrders,
   getPurchaseOrderById,
   createPurchaseOrder,
-  receiveGoods
+  receiveGoods,
+  createPurchaseOrderFromShortage
 };
+

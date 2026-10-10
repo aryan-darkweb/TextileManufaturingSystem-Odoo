@@ -10,6 +10,7 @@ const manufacturingRoutes = require('./manufacturing.routes');
 const qualityRoutes = require('./quality.routes');
 const hrRoutes = require('./hr.routes');
 const dashboardRoutes = require('./dashboard.routes');
+const accountingRoutes = require('./accounting.routes');
 
 // System Health Endpoint
 router.use('/health', healthRoutes);
@@ -24,6 +25,10 @@ router.use('/dispatch', dispatchRoutes);
 router.use('/manufacturing', manufacturingRoutes);
 router.use('/quality', qualityRoutes);
 router.use('/hr', hrRoutes);
+
+// Accounting, Transactions & Owner Month-End Closing
+router.use('/accounting', accountingRoutes);
+router.use('/transactions', accountingRoutes);
 
 // Cross-Module Unified Dashboard (Joint)
 router.use('/dashboard', dashboardRoutes);

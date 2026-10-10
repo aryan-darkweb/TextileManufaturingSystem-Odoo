@@ -15,7 +15,9 @@ import {
   Activity,
   User,
   ShieldCheck,
-  AlertCircle
+  AlertCircle,
+  ShoppingBag,
+  ExternalLink
 } from 'lucide-react';
 import { api } from '../../services/api';
 
@@ -28,6 +30,9 @@ export function ProductionView({ dbConnected }) {
   const [rawMaterials, setRawMaterials] = useState([]);
   const [machines, setMachines] = useState([]);
   const [employees, setEmployees] = useState([]);
+  const [suppliers, setSuppliers] = useState([]);
+  const [shortagesReport, setShortagesReport] = useState(null);
+  const [activeMainTab, setActiveMainTab] = useState('orders'); // 'orders' or 'shortages'
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState(null);
   const [successMsg, setSuccessMsg] = useState(null);
@@ -36,6 +41,20 @@ export function ProductionView({ dbConnected }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [stageFilter, setStageFilter] = useState('ALL');
+
+  // Shortage Reorder Modal State (Phase 4)
+  const [isShortageModalOpen, setIsShortageModalOpen] = useState(false);
+  const [shortageModalData, setShortageModalData] = useState(null);
+  const [shortageFormData, setShortageFormData] = useState({
+    supplierId: '',
+    quantity: '',
+    unitPrice: '',
+    expectedDeliveryDate: '',
+    notes: '',
+    idempotencyKey: '',
+  });
+  const [submittingShortage, setSubmittingShortage] = useState(false);
+  const [createdPOAcknowledgement, setCreatedPOAcknowledgement] = useState(null);
 
   // Modals & Slide-overs
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -58,6 +77,7 @@ export function ProductionView({ dbConnected }) {
     operatorId: '',
     notes: '',
   });
+
 
   // Complete Form State
   const [completeData, setCompleteData] = useState({
@@ -83,13 +103,15 @@ export function ProductionView({ dbConnected }) {
     setLoading(true);
     setErrorMsg(null);
     try {
-      const [ordRes, soRes, prodRes, rawRes, mchRes, empRes] = await Promise.allSettled([
+      const [ordRes, soRes, prodRes, rawRes, mchRes, empRes, suppRes, shortRes] = await Promise.allSettled([
         api.getProductionOrders(),
         api.getSalesOrders(),
         api.getProducts({ type: 'FINISHED_GOODS' }),
         api.getProducts({ type: 'RAW_MATERIAL' }),
         api.getMachines(),
         api.getEmployees({ status: 'ACTIVE' }),
+        api.getSuppliers(),
+        api.getMaterialShortages(),
       ]);
 
       if (ordRes.status === 'fulfilled' && ordRes.value?.data) {
@@ -110,6 +132,12 @@ export function ProductionView({ dbConnected }) {
       if (empRes.status === 'fulfilled' && empRes.value?.data) {
         setEmployees(empRes.value.data);
       }
+      if (suppRes.status === 'fulfilled' && suppRes.value?.data) {
+        setSuppliers(suppRes.value.data);
+      }
+      if (shortRes.status === 'fulfilled' && shortRes.value?.data) {
+        setShortagesReport(shortRes.value.data);
+      }
     } catch (err) {
       setErrorMsg(err.message || 'Failed to fetch production data');
     } finally {
@@ -117,9 +145,97 @@ export function ProductionView({ dbConnected }) {
     }
   };
 
+  const fetchShortages = async () => {
+    try {
+      const res = await api.getMaterialShortages();
+      if (res?.data) {
+        setShortagesReport(res.data);
+      }
+    } catch {
+      // non-blocking
+    }
+  };
+
   useEffect(() => {
     loadData();
   }, []);
+
+  const openShortageModal = (shortageItem, orderRef = null) => {
+    const rawProd = rawMaterials.find(
+      (r) => r.id === (shortageItem.materialId || shortageItem.rawMaterialId)
+    );
+    const unitPrice = shortageItem.unitCost || rawProd?.unitCost || 250;
+    const initialQty = shortageItem.shortageQuantity || shortageItem.shortage || 100;
+    const defaultSup = suppliers[0]?.id || '';
+
+    const d = new Date();
+    d.setDate(d.getDate() + 7);
+    const defaultDate = d.toISOString().split('T')[0];
+
+    const prodOrderId = orderRef?.id || shortageItem.affectedOrders?.[0]?.productionOrderId || '';
+    const orderNum = orderRef?.orderNumber || shortageItem.affectedOrders?.[0]?.orderNumber || '';
+
+    setShortageModalData({
+      materialId: shortageItem.materialId || shortageItem.rawMaterialId,
+      materialName: shortageItem.materialName || shortageItem.name,
+      materialCode: shortageItem.materialCode || shortageItem.rawMaterialCode,
+      unit: shortageItem.unit,
+      availableStock: shortageItem.availableStock,
+      totalNeeded: shortageItem.totalNeeded || shortageItem.plannedQuantity,
+      shortageQuantity: initialQty,
+      productionOrderId: prodOrderId,
+      orderNumber: orderNum,
+    });
+
+    setShortageFormData({
+      supplierId: defaultSup,
+      quantity: String(initialQty),
+      unitPrice: String(unitPrice),
+      expectedDeliveryDate: defaultDate,
+      notes: `Shortage fulfillment for ${shortageItem.materialName || shortageItem.name}${orderNum ? ` (Order ${orderNum})` : ''}`,
+      idempotencyKey: `IDEMP-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+    });
+
+    setCreatedPOAcknowledgement(null);
+    setIsShortageModalOpen(true);
+  };
+
+  const handleCreateShortagePO = async (e) => {
+    e.preventDefault();
+    setSubmittingShortage(true);
+    setErrorMsg(null);
+    try {
+      const payload = {
+        supplierId: shortageFormData.supplierId,
+        materialId: shortageModalData.materialId,
+        quantity: parseFloat(shortageFormData.quantity),
+        unitPrice: parseFloat(shortageFormData.unitPrice),
+        expectedDeliveryDate: shortageFormData.expectedDeliveryDate,
+        productionOrderId: shortageModalData.productionOrderId || undefined,
+        notes: shortageFormData.notes,
+        idempotencyKey: shortageFormData.idempotencyKey,
+      };
+
+      const res = await api.createPurchaseOrderFromShortage(payload);
+      if (res?.data) {
+        setCreatedPOAcknowledgement(res.data);
+        setSuccessMsg(
+          res.data.duplicatePrevented
+            ? `Duplicate request prevented: existing Purchase Order ${res.data.orderNumber} returned.`
+            : `Purchase Order ${res.data.orderNumber} created successfully! Inventory will increase upon Goods Receipt.`
+        );
+        fetchShortages();
+        if (selectedOrder) {
+          refreshDetail(selectedOrder.id);
+        }
+      }
+    } catch (err) {
+      setErrorMsg(err.message || 'Failed to create purchase order from shortage');
+    } finally {
+      setSubmittingShortage(false);
+    }
+  };
+
 
   const openOrderDetail = async (order) => {
     setSelectedOrder(order);
@@ -332,165 +448,361 @@ export function ProductionView({ dbConnected }) {
         </div>
       )}
 
-      {/* Action Toolbar */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="relative w-64">
-            <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Search PO #, Product, Buyer..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-9 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
-            />
+      {/* Sub-tab Pills (Orders vs Shortages) */}
+      <div className="flex items-center gap-2 bg-slate-200/60 p-1 rounded-2xl w-fit border border-slate-300/70">
+        <button
+          onClick={() => setActiveMainTab('orders')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+            activeMainTab === 'orders'
+              ? 'bg-white text-slate-900 shadow-xs'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <Cpu className="w-3.5 h-3.5 text-violet-600" />
+          Production Orders ({orders.length})
+        </button>
+
+        <button
+          onClick={() => setActiveMainTab('shortages')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+            activeMainTab === 'shortages'
+              ? 'bg-white text-slate-900 shadow-xs'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <AlertTriangle
+            className={`w-3.5 h-3.5 ${
+              (shortagesReport?.summary?.totalShortageMaterials || 0) > 0
+                ? 'text-rose-600'
+                : 'text-slate-400'
+            }`}
+          />
+          Raw Material Shortages & Reorders
+          {(shortagesReport?.summary?.totalShortageMaterials || 0) > 0 && (
+            <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 text-[10px] font-black border border-rose-200">
+              {shortagesReport.summary.totalShortageMaterials} SHORT
+            </span>
+          )}
+        </button>
+      </div>
+
+      {activeMainTab === 'shortages' ? (
+        /* SHORTAGES DASHBOARD (Phase 4) */
+        <div className="space-y-4 animate-in fade-in duration-150">
+          {/* Summary KPIs */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="bg-white rounded-3xl border border-slate-200 p-5 shadow-xs space-y-1">
+              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                Deficit Raw Materials
+              </span>
+              <div className="text-2xl font-black text-rose-700">
+                {shortagesReport?.summary?.totalShortageMaterials || 0}
+                <span className="text-xs font-normal text-slate-400 ml-1.5">materials with deficit</span>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-3xl border border-slate-200 p-5 shadow-xs space-y-1">
+              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                Affected Production Orders
+              </span>
+              <div className="text-2xl font-black text-slate-900">
+                {shortagesReport?.summary?.totalAffectedOrders || 0}
+                <span className="text-xs font-normal text-slate-400 ml-1.5">awaiting yarn / dye</span>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-3xl border border-slate-200 p-5 shadow-xs space-y-1">
+              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                Estimated Reorder Value
+              </span>
+              <div className="text-2xl font-black text-violet-950 font-mono">
+                ₹{(shortagesReport?.summary?.totalEstimatedCost || 0).toLocaleString()}
+              </div>
+            </div>
           </div>
 
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="text-xs bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-sky-500"
-          >
-            <option value="ALL">All Statuses</option>
-            <option value="PLANNED">PLANNED</option>
-            <option value="IN_PROGRESS">IN_PROGRESS</option>
-            <option value="PAUSED">PAUSED</option>
-            <option value="COMPLETED">COMPLETED</option>
-          </select>
+          {/* Shortages Table */}
+          <div className="bg-white rounded-3xl border border-slate-200 shadow-xs overflow-hidden">
+            <div className="p-5 border-b border-slate-200 bg-slate-50/50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900">
+                  Raw Material Shortage Register
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Calculated from planned recipe demand vs current warehouse stock across active production orders.
+                </p>
+              </div>
+              <button
+                onClick={fetchShortages}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors self-start sm:self-auto"
+              >
+                <RefreshCw className="w-3.5 h-3.5" /> Refresh Shortages
+              </button>
+            </div>
 
-          <select
-            value={stageFilter}
-            onChange={(e) => setStageFilter(e.target.value)}
-            className="text-xs bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-sky-500"
-          >
-            <option value="ALL">All Stages</option>
-            <option value="SPINNING">Spinning</option>
-            <option value="WEAVING">Weaving</option>
-            <option value="DYEING">Dyeing</option>
-            <option value="FINISHING">Finishing</option>
-            <option value="COMPLETED">Completed</option>
-          </select>
-        </div>
+            {(!shortagesReport?.shortages || shortagesReport.shortages.length === 0) ? (
+              <div className="p-12 text-center text-slate-400 space-y-2">
+                <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto">
+                  <CheckCircle2 className="w-6 h-6" />
+                </div>
+                <h4 className="text-sm font-bold text-slate-800">All Material Requirements Covered</h4>
+                <p className="text-xs text-slate-500 max-w-md mx-auto">
+                  Warehouse stock is sufficient for all active and planned production orders. No material deficits detected.
+                </p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 text-slate-500 text-[10px] uppercase font-bold tracking-wider">
+                    <tr>
+                      <th className="py-3 px-4">Raw Material</th>
+                      <th className="py-3 px-4 text-right">In Warehouse</th>
+                      <th className="py-3 px-4 text-right">Recipe Demand</th>
+                      <th className="py-3 px-4 text-right">Net Shortage</th>
+                      <th className="py-3 px-4 text-right">Est. Cost</th>
+                      <th className="py-3 px-4">Affected Orders</th>
+                      <th className="py-3 px-4">Purchase Status</th>
+                      <th className="py-3 px-4 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {shortagesReport.shortages.map((s) => (
+                      <tr key={s.materialId} className="hover:bg-slate-50/60 transition-colors">
+                        <td className="py-3 px-4">
+                          <div className="font-bold text-slate-900">{s.materialName}</div>
+                          <div className="text-[10px] font-mono text-slate-400">{s.materialCode}</div>
+                        </td>
 
-        <div className="flex items-center gap-2">
-          <button
-            onClick={loadData}
-            disabled={loading}
-            className="p-2 text-slate-500 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 rounded-lg border border-slate-300 transition-colors"
-            title="Refresh"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          </button>
-          <button
-            onClick={() => setIsCreateOpen(true)}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-lg bg-sky-600 text-white hover:bg-sky-700 shadow-sm transition-colors"
-          >
-            <Plus className="w-4 h-4" />
-            New Production Order
-          </button>
-        </div>
-      </div>
+                        <td className="py-3 px-4 text-right font-mono text-slate-700 font-semibold">
+                          {s.availableStock} {s.unit}
+                        </td>
 
-      {/* Orders Table */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase font-semibold text-[10px]">
-              <tr>
-                <th className="py-3 px-4">Order #</th>
-                <th className="py-3 px-4">Product</th>
-                <th className="py-3 px-4">Buyer SO</th>
-                <th className="py-3 px-4">Stage</th>
-                <th className="py-3 px-4">Status</th>
-                <th className="py-3 px-4">Progress</th>
-                <th className="py-3 px-4 text-right">Target Qty</th>
-                <th className="py-3 px-4 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {filteredOrders.length === 0 ? (
-                <tr>
-                  <td colSpan="8" className="text-center py-12 text-slate-400">
-                    <Cpu className="w-8 h-8 mx-auto mb-2 text-slate-300" />
-                    No production orders found matching criteria.
-                  </td>
-                </tr>
-              ) : (
-                filteredOrders.map((order) => {
-                  const pct = order.progressPct || 0;
+                        <td className="py-3 px-4 text-right font-mono text-slate-900 font-semibold">
+                          {s.totalNeeded} {s.unit}
+                        </td>
 
-                  return (
-                    <tr
-                      key={order.id}
-                      onClick={() => openOrderDetail(order)}
-                      className="hover:bg-slate-50/80 cursor-pointer transition-colors"
-                    >
-                      <td className="py-3 px-4 font-mono font-bold text-sky-700">
-                        {order.orderNumber}
-                      </td>
-                      <td className="py-3 px-4">
-                        <div className="font-semibold text-slate-900">{order.product?.name}</div>
-                        <div className="text-[10px] text-slate-400 font-mono">{order.product?.code}</div>
-                      </td>
-                      <td className="py-3 px-4">
-                        {order.salesOrder ? (
-                          <span className="font-mono text-slate-700 font-medium">
-                            {order.salesOrder.orderNumber}
+                        <td className="py-3 px-4 text-right">
+                          <span className="px-2 py-0.5 rounded-full text-[11px] font-black bg-rose-100 text-rose-800 border border-rose-200">
+                            -{s.shortageQuantity} {s.unit}
                           </span>
-                        ) : (
-                          <span className="text-slate-400 italic">MTO Inventory</span>
-                        )}
-                      </td>
-                      <td className="py-3 px-4">
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-violet-50 text-violet-700 border border-violet-200">
-                          {order.stage}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4">
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
-                            order.status === 'COMPLETED'
-                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                              : order.status === 'IN_PROGRESS'
-                              ? 'bg-sky-50 text-sky-700 border-sky-200'
-                              : order.status === 'PAUSED'
-                              ? 'bg-amber-50 text-amber-700 border-amber-200'
-                              : 'bg-slate-50 text-slate-600 border-slate-200'
-                          }`}
-                        >
-                          {order.status}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 w-40">
-                        <div className="flex items-center justify-between text-[10px] text-slate-500 mb-1">
-                          <span>{pct}%</span>
-                          <span>{order.producedQuantity} / {order.targetQuantity}</span>
-                        </div>
-                        <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
-                          <div
-                            className={`h-full rounded-full transition-all ${
-                              pct >= 100 ? 'bg-emerald-500' : 'bg-sky-500'
-                            }`}
-                            style={{ width: `${pct}%` }}
-                          />
-                        </div>
-                      </td>
-                      <td className="py-3 px-4 text-right font-semibold text-slate-800">
-                        {order.targetQuantity} {order.product?.unit}
-                      </td>
-                      <td className="py-3 px-4 text-right">
-                        <span className="text-sky-600 font-semibold hover:text-sky-800 text-[11px] inline-flex items-center gap-1">
-                          Timeline <ArrowRight className="w-3.5 h-3.5" />
-                        </span>
+                        </td>
+
+                        <td className="py-3 px-4 text-right font-mono text-slate-900 font-bold">
+                          ₹{s.estimatedReorderCost.toLocaleString()}
+                        </td>
+
+                        <td className="py-3 px-4">
+                          <div className="flex flex-wrap gap-1 max-w-[180px]">
+                            {s.affectedOrders?.map((ord, oIdx) => (
+                              <span
+                                key={oIdx}
+                                className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-mono text-[10px]"
+                              >
+                                {ord.orderNumber}
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+
+                        <td className="py-3 px-4">
+                          {s.hasPendingPurchase ? (
+                            <div className="space-y-0.5">
+                              {s.pendingPurchaseOrders.slice(0, 1).map((po, pIdx) => (
+                                <span
+                                  key={pIdx}
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-50 text-sky-800 border border-sky-200"
+                                >
+                                  {po.orderNumber} [{po.status}]
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-[10px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 font-semibold">
+                              Needs Reorder
+                            </span>
+                          )}
+                        </td>
+
+                        <td className="py-3 px-4 text-right">
+                          <button
+                            onClick={() => openShortageModal(s)}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors"
+                          >
+                            <ShoppingBag className="w-3.5 h-3.5" />
+                            Create PO
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
+        /* ORDERS VIEW - Existing Toolbar & Orders Table */
+        <div className="space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="relative w-64">
+                <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search PO #, Product, Buyer..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full pl-9 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
+                />
+              </div>
+
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="text-xs bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-sky-500"
+              >
+                <option value="ALL">All Statuses</option>
+                <option value="PLANNED">PLANNED</option>
+                <option value="IN_PROGRESS">IN_PROGRESS</option>
+                <option value="PAUSED">PAUSED</option>
+                <option value="COMPLETED">COMPLETED</option>
+              </select>
+
+              <select
+                value={stageFilter}
+                onChange={(e) => setStageFilter(e.target.value)}
+                className="text-xs bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-sky-500"
+              >
+                <option value="ALL">All Stages</option>
+                <option value="SPINNING">Spinning</option>
+                <option value="WEAVING">Weaving</option>
+                <option value="DYEING">Dyeing</option>
+                <option value="FINISHING">Finishing</option>
+                <option value="COMPLETED">Completed</option>
+              </select>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={loadData}
+                disabled={loading}
+                className="p-2 text-slate-500 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 rounded-lg border border-slate-300 transition-colors"
+                title="Refresh"
+              >
+                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+              </button>
+              <button
+                onClick={() => setIsCreateOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-lg bg-sky-600 text-white hover:bg-sky-700 shadow-sm transition-colors"
+              >
+                <Plus className="w-4 h-4" />
+                New Production Order
+              </button>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase font-semibold text-[10px]">
+                  <tr>
+                    <th className="py-3 px-4">Order #</th>
+                    <th className="py-3 px-4">Product</th>
+                    <th className="py-3 px-4">Buyer SO</th>
+                    <th className="py-3 px-4">Stage</th>
+                    <th className="py-3 px-4">Status</th>
+                    <th className="py-3 px-4">Progress</th>
+                    <th className="py-3 px-4 text-right">Target Qty</th>
+                    <th className="py-3 px-4 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredOrders.length === 0 ? (
+                    <tr>
+                      <td colSpan="8" className="text-center py-12 text-slate-400">
+                        <Cpu className="w-8 h-8 mx-auto mb-2 text-slate-300" />
+                        No production orders found matching criteria.
                       </td>
                     </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
+                  ) : (
+                    filteredOrders.map((order) => {
+                      const pct = order.progressPct || 0;
+
+                      return (
+                        <tr
+                          key={order.id}
+                          onClick={() => openOrderDetail(order)}
+                          className="hover:bg-slate-50/80 cursor-pointer transition-colors"
+                        >
+                          <td className="py-3 px-4 font-mono font-bold text-sky-700">
+                            {order.orderNumber}
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="font-semibold text-slate-900">{order.product?.name}</div>
+                            <div className="text-[10px] text-slate-400 font-mono">{order.product?.code}</div>
+                          </td>
+                          <td className="py-3 px-4">
+                            {order.salesOrder ? (
+                              <span className="font-mono text-slate-700 font-medium">
+                                {order.salesOrder.orderNumber}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 italic">MTO Inventory</span>
+                            )}
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-violet-50 text-violet-700 border border-violet-200">
+                              {order.stage}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4">
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
+                                order.status === 'COMPLETED'
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                  : order.status === 'IN_PROGRESS'
+                                  ? 'bg-sky-50 text-sky-700 border-sky-200'
+                                  : order.status === 'PAUSED'
+                                  ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                  : 'bg-slate-50 text-slate-600 border-slate-200'
+                              }`}
+                            >
+                              {order.status}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 w-40">
+                            <div className="flex items-center justify-between text-[10px] text-slate-500 mb-1">
+                              <span>{pct}%</span>
+                              <span>{order.producedQuantity} / {order.targetQuantity}</span>
+                            </div>
+                            <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                              <div
+                                className={`h-full rounded-full transition-all ${
+                                  pct >= 100 ? 'bg-emerald-500' : 'bg-sky-500'
+                                }`}
+                                style={{ width: `${pct}%` }}
+                              />
+                            </div>
+                          </td>
+                          <td className="py-3 px-4 text-right font-semibold text-slate-800">
+                            {order.targetQuantity} {order.product?.unit}
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <span className="text-sky-600 font-semibold hover:text-sky-800 text-[11px] inline-flex items-center gap-1">
+                              Timeline <ArrowRight className="w-3.5 h-3.5" />
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
+
 
       {/* CREATE ORDER SLIDE-OVER */}
       {isCreateOpen && (
@@ -962,9 +1274,20 @@ export function ProductionView({ dbConnected }) {
                               </td>
                               <td className="py-2.5 px-3 text-right">
                                 {m.status === 'SHORT' ? (
-                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-200">
-                                    SHORT (-{m.shortage} {m.unit})
-                                  </span>
+                                  <div className="flex items-center justify-end gap-2">
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-200">
+                                      SHORT (-{m.shortage} {m.unit})
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => openShortageModal(m, detailOrder)}
+                                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-violet-600 hover:bg-violet-700 text-white font-bold text-[10px] shadow-2xs transition-colors"
+                                      title="Create vendor purchase order for shortage"
+                                    >
+                                      <ShoppingBag className="w-3 h-3" />
+                                      Create PO
+                                    </button>
+                                  </div>
                                 ) : (
                                   <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
                                     OK Available
@@ -972,6 +1295,7 @@ export function ProductionView({ dbConnected }) {
                                 )}
                               </td>
                             </tr>
+
                           ))
                         )}
                       </tbody>
@@ -1246,6 +1570,210 @@ export function ProductionView({ dbConnected }) {
           </div>
         </div>
       )}
+
+      {/* SHORTAGE TO PURCHASE ORDER MODAL (Phase 4) */}
+      {isShortageModalOpen && shortageModalData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl border border-slate-200 p-6 w-full max-w-lg shadow-2xl text-xs space-y-4 animate-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-violet-100 text-violet-700 flex items-center justify-center">
+                  <ShoppingBag className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-slate-900 text-sm">
+                    Create Purchase Order from Shortage
+                  </h4>
+                  <p className="text-slate-500 text-[11px]">
+                    Procure required raw materials from an approved mill supplier.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsShortageModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Shortage Material Summary Card */}
+            <div className="p-4 rounded-2xl bg-violet-50/70 border border-violet-200 space-y-2">
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="font-bold text-violet-950 text-sm">
+                    {shortageModalData.materialName}
+                  </div>
+                  <div className="text-[11px] font-mono text-violet-700 font-semibold">
+                    {shortageModalData.materialCode}
+                  </div>
+                </div>
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-rose-100 text-rose-800 border border-rose-200">
+                  Deficit: {shortageModalData.shortageQuantity} {shortageModalData.unit}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 pt-2 border-t border-violet-200/60 text-[11px]">
+                <div className="text-slate-600">
+                  In Warehouse: <strong className="text-slate-900 font-mono">{shortageModalData.availableStock} {shortageModalData.unit}</strong>
+                </div>
+                <div className="text-slate-600 text-right">
+                  Total Needed: <strong className="text-slate-900 font-mono">{shortageModalData.totalNeeded} {shortageModalData.unit}</strong>
+                </div>
+              </div>
+            </div>
+
+            {createdPOAcknowledgement ? (
+              /* Success View */
+              <div className="p-5 bg-emerald-50 border border-emerald-200 rounded-2xl text-emerald-900 space-y-3">
+                <div className="flex items-center gap-2 font-bold text-sm text-emerald-800">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                  Purchase Order {createdPOAcknowledgement.orderNumber} Created!
+                </div>
+                <p className="text-xs text-emerald-700 leading-relaxed">
+                  Purchase order for <strong>{createdPOAcknowledgement.items?.[0]?.orderedQty} {shortageModalData.unit}</strong> has been placed with <strong>{createdPOAcknowledgement.supplier?.name}</strong>.
+                  Order status is set to <strong>{createdPOAcknowledgement.status}</strong>.
+                </p>
+                <div className="p-3 bg-white/80 rounded-xl border border-emerald-200 text-[11px] text-emerald-800 space-y-1">
+                  <strong>Strict Inventory Notice:</strong> Warehouse stock has <em>not</em> been increased. Stock will update automatically when goods receipt is performed upon physical delivery.
+                </div>
+                <div className="pt-2 flex items-center justify-end gap-2">
+                  <button
+                    onClick={() => {
+                      setIsShortageModalOpen(false);
+                      setCreatedPOAcknowledgement(null);
+                    }}
+                    className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold transition-colors"
+                  >
+                    Done & Refresh
+                  </button>
+                </div>
+              </div>
+            ) : (
+              /* Order Form */
+              <form onSubmit={handleCreateShortagePO} className="space-y-3.5">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    Select Supplier *
+                  </label>
+                  <select
+                    required
+                    value={shortageFormData.supplierId}
+                    onChange={(e) =>
+                      setShortageFormData({ ...shortageFormData, supplierId: e.target.value })
+                    }
+                    className="w-full p-2.5 border border-slate-300 rounded-xl bg-slate-50 text-slate-900 font-medium focus:ring-2 focus:ring-violet-500 focus:outline-hidden"
+                  >
+                    <option value="">-- Choose Approved Supplier --</option>
+                    {suppliers.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name} {s.yarnTypesSupplied ? `(${s.yarnTypesSupplied})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">
+                      Order Quantity ({shortageModalData.unit}) *
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      min="0.1"
+                      required
+                      value={shortageFormData.quantity}
+                      onChange={(e) =>
+                        setShortageFormData({ ...shortageFormData, quantity: e.target.value })
+                      }
+                      className="w-full p-2.5 border border-slate-300 rounded-xl bg-slate-50 font-bold font-mono text-slate-900"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">
+                      Unit Price (₹ / {shortageModalData.unit}) *
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      min="0"
+                      required
+                      value={shortageFormData.unitPrice}
+                      onChange={(e) =>
+                        setShortageFormData({ ...shortageFormData, unitPrice: e.target.value })
+                      }
+                      className="w-full p-2.5 border border-slate-300 rounded-xl bg-slate-50 font-bold font-mono text-slate-900"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between p-2.5 bg-slate-50 rounded-xl border border-slate-200">
+                  <span className="text-slate-500 font-medium">Estimated Order Amount:</span>
+                  <span className="font-mono text-sm font-black text-slate-900">
+                    ₹{((parseFloat(shortageFormData.quantity) || 0) * (parseFloat(shortageFormData.unitPrice) || 0)).toLocaleString()}
+                  </span>
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    Expected Delivery Date
+                  </label>
+                  <input
+                    type="date"
+                    value={shortageFormData.expectedDeliveryDate}
+                    onChange={(e) =>
+                      setShortageFormData({ ...shortageFormData, expectedDeliveryDate: e.target.value })
+                    }
+                    className="w-full p-2 border border-slate-300 rounded-xl bg-slate-50 font-mono text-slate-900"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Order Notes</label>
+                  <textarea
+                    rows="2"
+                    value={shortageFormData.notes}
+                    onChange={(e) =>
+                      setShortageFormData({ ...shortageFormData, notes: e.target.value })
+                    }
+                    placeholder="Urgent shortage fulfillment..."
+                    className="w-full p-2 border border-slate-300 rounded-xl bg-slate-50 text-slate-800"
+                  />
+                </div>
+
+                {/* Important Inventory Isolation Notice */}
+                <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-amber-900 text-[11px] flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <div className="leading-relaxed">
+                    <strong>Inventory Protection Rule:</strong> Generating this purchase order will <em>not</em> increase warehouse inventory. Stock updates solely after goods receipt is recorded.
+                  </div>
+                </div>
+
+                <div className="pt-3 border-t border-slate-200 flex items-center justify-end gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setIsShortageModalOpen(false)}
+                    className="px-4 py-2 border border-slate-300 rounded-xl font-semibold text-slate-700 hover:bg-slate-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={submittingShortage || !shortageFormData.supplierId}
+                    className="px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-xl font-semibold flex items-center gap-1.5 shadow-sm disabled:opacity-50"
+                  >
+                    {submittingShortage && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                    Create Purchase Order
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   BarChart3,
   Package,
-  ShoppingCart,
+  Users,
   ShoppingBag,
   Truck,
   Cpu,
@@ -10,7 +10,9 @@ import {
   AlertTriangle,
   RefreshCw,
   ArrowRight,
-  TrendingUp
+  TrendingUp,
+  Receipt,
+  PieChart
 } from 'lucide-react';
 import { api } from '../services/api';
 
@@ -49,14 +51,23 @@ export function DashboardView({ setActiveTab }) {
           </p>
         </div>
 
-        <button
-          onClick={loadSummary}
-          disabled={loading}
-          className="flex items-center gap-2 px-4 py-2.5 border border-[#E8DFEF] bg-white rounded-xl hover:bg-[#FAF7FC] text-[#503568] text-sm font-semibold transition cursor-pointer min-h-[44px]"
-        >
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-[#7950A8]' : ''}`} />
-          <span>Refresh Data</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setActiveTab('finance')}
+            className="flex items-center gap-2 px-3.5 py-2.5 bg-[#503568] text-white rounded-xl text-sm font-semibold hover:bg-[#3d2750] transition cursor-pointer min-h-[44px]"
+          >
+            <PieChart className="w-4 h-4" />
+            <span>Owner Finance & Closing</span>
+          </button>
+          <button
+            onClick={loadSummary}
+            disabled={loading}
+            className="flex items-center gap-2 px-4 py-2.5 border border-[#E8DFEF] bg-white rounded-xl hover:bg-[#FAF7FC] text-[#503568] text-sm font-semibold transition cursor-pointer min-h-[44px]"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-[#7950A8]' : ''}`} />
+            <span>Refresh Data</span>
+          </button>
+        </div>
       </div>
 
       {/* KPI Cards Row - Spacious & Legible */}
@@ -79,12 +90,12 @@ export function DashboardView({ setActiveTab }) {
         </div>
 
         <div
-          onClick={() => setActiveTab('sales')}
+          onClick={() => setActiveTab('buyers')}
           className="bg-white p-5 rounded-2xl border border-[#E8DFEF] shadow-2xs hover:border-[#7950A8] transition cursor-pointer"
         >
           <div className="flex items-center justify-between">
-            <span className="text-xs uppercase font-bold text-[#766D82] tracking-wider">Sales Orders</span>
-            <ShoppingCart className="w-5 h-5 text-[#7950A8]" />
+            <span className="text-xs uppercase font-bold text-[#766D82] tracking-wider">Buyer Orders</span>
+            <Users className="w-5 h-5 text-[#7950A8]" />
           </div>
           <p className="text-3xl font-extrabold text-[#503568] mt-2">
             {summary?.supplyChain?.totalSalesOrders ?? '—'}
@@ -171,16 +182,16 @@ export function DashboardView({ setActiveTab }) {
             </div>
 
             <div
-              onClick={() => setActiveTab('sales')}
+              onClick={() => setActiveTab('buyers')}
               className="p-4 bg-[#FAF7FC] rounded-xl border border-[#E8DFEF] hover:border-[#7950A8] flex items-center justify-between transition cursor-pointer"
             >
               <div className="flex items-center gap-3.5">
                 <div className="w-10 h-10 rounded-xl bg-[#EEE5F7] text-[#503568] flex items-center justify-center">
-                  <ShoppingCart className="w-5 h-5" />
+                  <Users className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-sm text-[#292235]">Buyer Order Fulfillment</h3>
-                  <p className="text-xs text-[#766D82]">Process customer fabric orders and delivery dates</p>
+                  <h3 className="font-bold text-sm text-[#292235]">Buyer Management & Orders</h3>
+                  <p className="text-xs text-[#766D82]">Directory, contracts, live floor stages, and manufacturing costing</p>
                 </div>
               </div>
               <ArrowRight className="w-4 h-4 text-[#766D82]" />
@@ -197,6 +208,22 @@ export function DashboardView({ setActiveTab }) {
                 <div>
                   <h3 className="font-bold text-sm text-[#292235]">Dispatch & Gate Pass Out</h3>
                   <p className="text-xs text-[#766D82]">Assign transport trucks and deduct finished goods stock</p>
+                </div>
+              </div>
+              <ArrowRight className="w-4 h-4 text-[#766D82]" />
+            </div>
+
+            <div
+              onClick={() => setActiveTab('transactions')}
+              className="p-4 bg-[#FAF7FC] rounded-xl border border-[#E8DFEF] hover:border-[#7950A8] flex items-center justify-between transition cursor-pointer"
+            >
+              <div className="flex items-center gap-3.5">
+                <div className="w-10 h-10 rounded-xl bg-[#EEE5F7] text-[#503568] flex items-center justify-center">
+                  <Receipt className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-[#292235]">Central Financial Transactions</h3>
+                  <p className="text-xs text-[#766D82]">Audited ledger of real money flows across buyers, suppliers & payroll</p>
                 </div>
               </div>
               <ArrowRight className="w-4 h-4 text-[#766D82]" />

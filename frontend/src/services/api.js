@@ -76,11 +76,102 @@ export const api = {
       body: JSON.stringify({ status }),
     }),
   getCustomers: () => request('/sales/customers'),
+  getCustomerById: (id) => request(`/sales/customers/${id}`),
   createCustomer: (customerData) =>
     request('/sales/customers', {
       method: 'POST',
       body: JSON.stringify(customerData),
     }),
+  updateCustomer: (id, customerData) =>
+    request(`/sales/customers/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(customerData),
+    }),
+
+  // Buyer Management aliases
+  getBuyers: () => request('/sales/customers'),
+  getBuyerById: (id) => request(`/sales/customers/${id}`),
+  createBuyer: (buyerData) =>
+    request('/sales/customers', {
+      method: 'POST',
+      body: JSON.stringify(buyerData),
+    }),
+  updateBuyer: (id, buyerData) =>
+    request(`/sales/customers/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(buyerData),
+    }),
+
+  // Central Transactions Feed
+  getTransactions: (params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    return request(`/accounting/transactions${query ? `?${query}` : ''}`);
+  },
+  getCentralTransactions: (params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    return request(`/accounting/transactions${query ? `?${query}` : ''}`);
+  },
+
+  // Accounting, Invoices & Financials
+  getInvoices: (params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    return request(`/accounting/invoices${query ? `?${query}` : ''}`);
+  },
+  getInvoiceById: (id) => request(`/accounting/invoices/${id}`),
+  createInvoice: (data) =>
+    request('/accounting/invoices', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  recordBuyerPayment: (data) =>
+    request('/accounting/payments/buyer', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  getSupplierBills: (params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    return request(`/accounting/bills${query ? `?${query}` : ''}`);
+  },
+  createSupplierBill: (data) =>
+    request('/accounting/bills', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  recordSupplierPayment: (data) =>
+    request('/accounting/payments/supplier', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  recordPayrollPayment: (data) =>
+    request('/accounting/payroll/payout', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  getPayrollPayments: (params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    return request(`/accounting/payroll/payouts${query ? `?${query}` : ''}`);
+  },
+  recordBusinessExpense: (data) =>
+    request('/accounting/expenses', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  getBusinessExpenses: (params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    return request(`/accounting/expenses${query ? `?${query}` : ''}`);
+  },
+  getOrderCosting: (salesOrderId) =>
+    request(`/accounting/costing/by-order/${salesOrderId}`),
+  getOwnerFinancialSummary: (monthOrParams = '') => {
+    let m = '';
+    if (typeof monthOrParams === 'string') {
+      m = monthOrParams;
+    } else if (monthOrParams && typeof monthOrParams === 'object') {
+      m = monthOrParams.month || '';
+    }
+    const query = m ? `?month=${encodeURIComponent(m)}` : '';
+    return request(`/accounting/summary/month-end${query}`);
+  },
 
   // Purchase Management
   getSuppliers: () => request('/purchase/suppliers'),
@@ -104,6 +195,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(receiveData),
     }),
+  createPurchaseOrderFromShortage: (data) =>
+    request('/purchase/orders/from-shortage', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
 
   // Dispatch & Logistics
   getDispatches: (params = {}) => {
@@ -122,6 +218,14 @@ export const api = {
 
   // Factory Operations - Manufacturing
   getFactoryToday: () => request('/manufacturing/factory-today'),
+  getMachineDailyOutput: (params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    return request(`/manufacturing/machines/daily-output${query ? `?${query}` : ''}`);
+  },
+  getMaterialShortages: (params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    return request(`/manufacturing/materials/shortages${query ? `?${query}` : ''}`);
+  },
   getProductionOrders: (params = {}) => {
     const query = new URLSearchParams(params).toString();
     return request(`/manufacturing/orders${query ? `?${query}` : ''}`);

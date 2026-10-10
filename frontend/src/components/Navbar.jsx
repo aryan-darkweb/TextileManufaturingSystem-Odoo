@@ -1,5 +1,5 @@
 import React from 'react';
-import { Database, Layers, LayoutGrid, Package, ShoppingCart, Truck, ShoppingBag, BarChart3, Factory } from 'lucide-react';
+import { Database, Layers, LayoutGrid, Package, Users, Truck, ShoppingBag, BarChart3, Factory, Receipt, PieChart } from 'lucide-react';
 
 export function Navbar({ activeTab, setActiveTab, health, onOpenHealth }) {
   const dbConnected = health?.database?.connected;
@@ -7,11 +7,13 @@ export function Navbar({ activeTab, setActiveTab, health, onOpenHealth }) {
 
   const navItems = [
     { id: 'grid', label: 'App Grid', icon: LayoutGrid },
+    { id: 'buyers', label: 'Buyer Management', icon: Users, alias: ['sales', 'buyers'] },
     { id: 'inventory', label: 'Inventory', icon: Package },
-    { id: 'sales', label: 'Sales Orders', icon: ShoppingCart },
     { id: 'purchase', label: 'Purchases', icon: ShoppingBag },
     { id: 'dispatch', label: 'Dispatch', icon: Truck },
     { id: 'factory', label: 'Factory Ops', icon: Factory },
+    { id: 'transactions', label: 'Transactions', icon: Receipt },
+    { id: 'finance', label: 'Owner Finance', icon: PieChart },
     { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
   ];
 
@@ -40,7 +42,7 @@ export function Navbar({ activeTab, setActiveTab, health, onOpenHealth }) {
           <nav className="hidden lg:flex items-center space-x-1">
             {navItems.map((item) => {
               const Icon = item.icon;
-              const isActive = activeTab === item.id;
+              const isActive = activeTab === item.id || (item.alias && item.alias.includes(activeTab));
               return (
                 <button
                   key={item.id}
@@ -96,7 +98,7 @@ export function Navbar({ activeTab, setActiveTab, health, onOpenHealth }) {
         <div className="flex lg:hidden overflow-x-auto py-2 border-t border-[#F3EEF8] space-x-1 no-scrollbar">
           {navItems.map((item) => {
             const Icon = item.icon;
-            const isActive = activeTab === item.id;
+            const isActive = activeTab === item.id || (item.alias && item.alias.includes(activeTab));
             return (
               <button
                 key={item.id}

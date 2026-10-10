@@ -227,7 +227,7 @@ export function FactoryTodayView({ onSwitchTab, dbConnected }) {
       </div>
 
       {/* Quick Navigation Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div
           onClick={() => onSwitchTab('production')}
           className="group bg-gradient-to-br from-violet-50 to-indigo-50 border border-violet-200 rounded-2xl p-5 cursor-pointer hover:shadow-md transition-all flex items-center justify-between"
@@ -239,6 +239,19 @@ export function FactoryTodayView({ onSwitchTab, dbConnected }) {
             <p className="text-xs text-violet-700 mt-1">Spinning, weaving & dyeing execution</p>
           </div>
           <ArrowRight className="w-5 h-5 text-violet-400 group-hover:text-violet-600 group-hover:translate-x-1 transition-all" />
+        </div>
+
+        <div
+          onClick={() => onSwitchTab('machine-output')}
+          className="group bg-gradient-to-br from-purple-50 to-fuchsia-50 border border-purple-200 rounded-2xl p-5 cursor-pointer hover:shadow-md transition-all flex items-center justify-between"
+        >
+          <div>
+            <h4 className="font-bold text-purple-950 text-sm group-hover:text-purple-700 transition-colors">
+              Machine Daily Output
+            </h4>
+            <p className="text-xs text-purple-700 mt-1">Actual meter & kg output by loom</p>
+          </div>
+          <ArrowRight className="w-5 h-5 text-purple-400 group-hover:text-purple-600 group-hover:translate-x-1 transition-all" />
         </div>
 
         <div
@@ -267,6 +280,7 @@ export function FactoryTodayView({ onSwitchTab, dbConnected }) {
           <ArrowRight className="w-5 h-5 text-sky-400 group-hover:text-sky-600 group-hover:translate-x-1 transition-all" />
         </div>
       </div>
+
     </div>
   );
 }

@@ -1,7 +1,6 @@
 import React from 'react';
 import {
   Package,
-  ShoppingCart,
   ShoppingBag,
   Truck,
   Cpu,
@@ -9,11 +8,23 @@ import {
   Users,
   BarChart3,
   ArrowRight,
-  ShieldCheck
+  ShieldCheck,
+  Receipt,
+  PieChart
 } from 'lucide-react';
 
 export function ModuleGrid({ setActiveTab, summary, dbConnected }) {
   const modules = [
+    {
+      id: 'buyers',
+      title: 'Buyer Management',
+      subtitle: 'Directory, Buyer Orders & Live Stages',
+      status: 'Available',
+      icon: Users,
+      description: 'Manage buyer directory, track derived live factory stages, and inspect order manufacturing costing.',
+      tab: 'buyers',
+      stats: summary?.supplyChain ? `${summary.supplyChain.totalSalesOrders} Orders` : 'Buyer Contracts'
+    },
     {
       id: 'inventory',
       title: 'Inventory Management',
@@ -23,16 +34,6 @@ export function ModuleGrid({ setActiveTab, summary, dbConnected }) {
       description: 'Track yarn cones, fabric rolls, and reorder levels. Stocks automatically increase upon purchase receiving.',
       tab: 'inventory',
       stats: summary?.supplyChain ? `${summary.supplyChain.totalProducts} Items` : 'Catalog Tracking'
-    },
-    {
-      id: 'sales',
-      title: 'Sales Orders',
-      subtitle: 'Buyer Contracts & Delivery Dates',
-      status: 'Available',
-      icon: ShoppingCart,
-      description: 'Capture buyer fabric orders, delivery deadlines, and manage fulfillment workflows.',
-      tab: 'sales',
-      stats: summary?.supplyChain ? `${summary.supplyChain.totalSalesOrders} Orders` : 'Order Pipeline'
     },
     {
       id: 'purchase',
@@ -83,6 +84,26 @@ export function ModuleGrid({ setActiveTab, summary, dbConnected }) {
       description: 'Daily shift attendance tracking (Morning, Evening, Night) with wage calculations.',
       tab: 'hr',
       stats: summary?.factoryOperations ? `${summary.factoryOperations.activeWorkers} Workers` : 'Shift Registers'
+    },
+    {
+      id: 'transactions',
+      title: 'Transactions',
+      subtitle: 'Central Financial Audit Ledger',
+      status: 'Available',
+      icon: Receipt,
+      description: 'Centralized money flow: sales invoices, buyer receipts, supplier bills & settlements, and wages.',
+      tab: 'transactions',
+      stats: 'Financial Events'
+    },
+    {
+      id: 'finance',
+      title: 'Owner Financial Closing',
+      subtitle: 'Accrual P&L, Cash Flow & Working Capital',
+      status: 'Available',
+      icon: PieChart,
+      description: 'Executive month-end health: Invoiced revenues vs material & labor costs, cash liquidity, and margins.',
+      tab: 'finance',
+      stats: 'Executive Closing'
     },
     {
       id: 'dashboard',
