@@ -1,0 +1,411 @@
+// ==============================================================================
+// TextileFlow Unified Prisma Schema
+// Shared Database for Everest Textile Mills System
+// ==============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ------------------------------------------------------------------------------
+// ENUMS
+// ------------------------------------------------------------------------------
+
+enum ProductType {
+  RAW_MATERIAL   // Yarn, Fiber, Raw Cotton
+  FINISHED_GOODS // Finished Fabric Rolls
+  WIP            // Weaving/Dyeing intermediate rolls
+  CONSUMABLE     // Dyes, Chemicals, Packing Material
+}
+
+enum UnitOfMeasure {
+  KG
+  METER
+  ROLL
+  CONE
+  PIECE
+}
+
+enum ProductStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum TransactionType {
+  PURCHASE_RECEIPT
+  PRODUCTION_CONSUMPTION
+  PRODUCTION_OUTPUT
+  DISPATCH
+  ADJUSTMENT
+}
+
+enum POStatus {
+  DRAFT
+  ORDERED
+  PARTIALLY_RECEIVED
+  RECEIVED
+  CANCELLED
+}
+
+enum SalesOrderStatus {
+  PENDING
+  CONFIRMED
+  IN_PRODUCTION
+  READY_TO_SHIP
+  DISPATCHED
+  COMPLETED
+  CANCELLED
+}
+
+enum DispatchStatus {
+  PREPARING
+  DISPATCHED
+  DELIVERED
+}
+
+enum MachineType {
+  SPINNING
+  WEAVING
+  DYEING
+  FINISHING
+}
+
+enum MachineStatus {
+  IDLE
+  RUNNING
+  MAINTENANCE
+  BREAKDOWN
+}
+
+enum ProductionStage {
+  SPINNING
+  WEAVING
+  DYEING
+  FINISHING
+  COMPLETED
+}
+
+enum ProductionStatus {
+  PLANNED
+  IN_PROGRESS
+  PAUSED
+  COMPLETED
+}
+
+enum DefectType {
+  NONE
+  HOLES
+  COLOR_MISMATCH
+  UNEVEN_WEAVING
+  STAIN
+  OTHER
+}
+
+enum QualityStatus {
+  PASSED
+  REWORK
+  REJECTED
+}
+
+enum Department {
+  SPINNING
+  WEAVING
+  DYEING
+  QUALITY
+  WAREHOUSE
+  MANAGEMENT
+}
+
+enum EmployeeStatus {
+  ACTIVE
+  ON_LEAVE
+  TERMINATED
+}
+
+enum ShiftType {
+  MORNING
+  EVENING
+  NIGHT
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  HALF_DAY
+}
+
+// ==============================================================================
+// 1. INVENTORY MODULE (Owner: Kishan)
+// ==============================================================================
+
+model Product {
+  id            String         @id @default(cuid())
+  code          String         @unique // e.g., YRN-COT-40, FAB-DNM-01
+  name          String
+  type          ProductType
+  category      String         // Cotton Yarn, Dyed Fabric, Gray Fabric, etc.
+  unit          UnitOfMeasure
+  currentStock  Float          @default(0.0)
+  minimumStock  Float          @default(0.0) // Warning threshold for low stock
+  unitCost      Float          @default(0.0)
+  color         String?
+  specifications String?       // Count, GSM, weave pattern
+  status        ProductStatus  @default(ACTIVE)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  // Relationships
+  inventoryTransactions InventoryTransaction[]
+  purchaseOrderItems    PurchaseOrderItem[]
+  salesOrderItems       SalesOrderItem[]
+  productionOrders      ProductionOrder[]
+
+  @@map("products")
+}
+
+model InventoryTransaction {
+  id              String          @id @default(cuid())
+  productId       String
+  product         Product         @relation(fields: [productId], references: [id], onDelete: Restrict)
+  type            TransactionType
+  quantity        Float           // Positive for in, negative for out
+  balanceAfter    Float?
+  referenceNumber String?         // Associated PO, SO, or Batch number
+  notes           String?
+  performedBy     String          @default("System User")
+  createdAt       DateTime        @default(now())
+
+  @@map("inventory_transactions")
+}
+
+// ==============================================================================
+// 2. PURCHASE MANAGEMENT (Owner: Kishan)
+// ==============================================================================
+
+model Supplier {
+  id                 String          @id @default(cuid())
+  name               String
+  contactPerson      String?
+  email              String?
+  phone              String?
+  address            String?
+  yarnTypesSupplied  String?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  purchaseOrders     PurchaseOrder[]
+
+  @@map("suppliers")
+}
+
+model PurchaseOrder {
+  id                  String             @id @default(cuid())
+  orderNumber         String             @unique // PO-2026-0001
+  supplierId          String
+  supplier            Supplier           @relation(fields: [supplierId], references: [id])
+  status              POStatus           @default(DRAFT)
+  orderDate           DateTime           @default(now())
+  expectedDeliveryDate DateTime?
+  totalAmount         Float              @default(0.0)
+  notes               String?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  items               PurchaseOrderItem[]
+
+  @@map("purchase_orders")
+}
+
+model PurchaseOrderItem {
+  id              String        @id @default(cuid())
+  purchaseOrderId String
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  productId       String
+  product         Product       @relation(fields: [productId], references: [id])
+  orderedQty      Float
+  receivedQty     Float         @default(0.0)
+  unitPrice       Float
+  totalPrice      Float
+
+  @@map("purchase_order_items")
+}
+
+// ==============================================================================
+// 3. SALES ORDERS (Owner: Kishan)
+// ==============================================================================
+
+model Customer {
+  id          String       @id @default(cuid())
+  name        String
+  companyName String?
+  email       String?
+  phone       String?
+  address     String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  salesOrders SalesOrder[]
+
+  @@map("customers")
+}
+
+model SalesOrder {
+  id               String           @id @default(cuid())
+  orderNumber      String           @unique // SO-2026-0001
+  customerId       String
+  customer         Customer         @relation(fields: [customerId], references: [id])
+  orderDate        DateTime         @default(now())
+  deliveryDeadline DateTime
+  status           SalesOrderStatus @default(PENDING)
+  totalAmount      Float            @default(0.0)
+  notes            String?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  items            SalesOrderItem[]
+  productionOrders ProductionOrder[]
+  dispatchRecords  DispatchRecord[]
+
+  @@map("sales_orders")
+}
+
+model SalesOrderItem {
+  id           String     @id @default(cuid())
+  salesOrderId String
+  salesOrder   SalesOrder @relation(fields: [salesOrderId], references: [id], onDelete: Cascade)
+  productId    String
+  product      Product    @relation(fields: [productId], references: [id])
+  fabricType   String     // Cotton Twill, Raw Denim, Dyed Satin, etc.
+  color        String
+  quantity     Float      // meters or rolls
+  unitPrice    Float
+  totalPrice   Float
+
+  @@map("sales_order_items")
+}
+
+// ==============================================================================
+// 4. DISPATCH & LOGISTICS (Owner: Kishan)
+// ==============================================================================
+
+model DispatchRecord {
+  id                 String         @id @default(cuid())
+  dispatchNumber     String         @unique // DSP-2026-0001
+  salesOrderId       String
+  salesOrder         SalesOrder     @relation(fields: [salesOrderId], references: [id])
+  vehicleNumber      String
+  driverName         String?
+  driverPhone        String?
+  destination        String
+  invoiceNumber      String?
+  dispatchedRollCount Int           @default(0)
+  status             DispatchStatus @default(PREPARING)
+  dispatchedAt       DateTime?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  @@map("dispatch_records")
+}
+
+// ==============================================================================
+// 5. MANUFACTURING (Owner: Teammate - Integration Contract Ready)
+// ==============================================================================
+
+model Machine {
+  id               String            @id @default(cuid())
+  code             String            @unique // SPN-01, WEV-02, DYE-01
+  name             String
+  type             MachineType
+  status           MachineStatus     @default(IDLE)
+  capacityPerShift Float             @default(100.0) // meters or kg
+  currentShift     String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  productionOrders ProductionOrder[]
+
+  @@map("machines")
+}
+
+model ProductionOrder {
+  id               String              @id @default(cuid())
+  orderNumber      String              @unique // PROD-2026-0001
+  salesOrderId     String?
+  salesOrder       SalesOrder?         @relation(fields: [salesOrderId], references: [id])
+  productId        String
+  product          Product             @relation(fields: [productId], references: [id])
+  machineId        String?
+  machine          Machine?            @relation(fields: [machineId], references: [id])
+  stage            ProductionStage     @default(SPINNING)
+  targetQuantity   Float
+  producedQuantity Float               @default(0.0)
+  status           ProductionStatus    @default(PLANNED)
+  startDate        DateTime?
+  endDate          DateTime?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  inspections      QualityInspection[]
+
+  @@map("production_orders")
+}
+
+// ==============================================================================
+// 6. QUALITY CONTROL (Owner: Teammate - Integration Contract Ready)
+// ==============================================================================
+
+model QualityInspection {
+  id                String          @id @default(cuid())
+  rollNumber        String          @unique // ROLL-2026-0001
+  productionOrderId String
+  productionOrder   ProductionOrder @relation(fields: [productionOrderId], references: [id])
+  metersInspected   Float
+  defectType        DefectType      @default(NONE)
+  defectSeverity    String?         @default("MINOR")
+  status            QualityStatus   @default(PASSED)
+  inspectorName     String          @default("QC Lead")
+  notes             String?
+  inspectedAt       DateTime        @default(now())
+
+  @@map("quality_inspections")
+}
+
+// ==============================================================================
+// 7. HR & ATTENDANCE (Owner: Teammate - Integration Contract Ready)
+// ==============================================================================
+
+model Employee {
+  id           String         @id @default(cuid())
+  employeeCode String         @unique // EMP-101
+  name         String
+  department   Department
+  role         String
+  wagePerShift Float          @default(500.0)
+  status       EmployeeStatus @default(ACTIVE)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  attendances  Attendance[]
+
+  @@map("employees")
+}
+
+model Attendance {
+  id             String           @id @default(cuid())
+  employeeId     String
+  employee       Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  date           DateTime
+  shift          ShiftType
+  status         AttendanceStatus
+  wageCalculated Float            @default(0.0)
+  createdAt      DateTime         @default(now())
+
+  @@unique([employeeId, date, shift])
+  @@map("attendances")
+}

@@ -1,0 +1,25 @@
+{
+  "name": "textileflow",
+  "version": "1.0.0",
+  "description": "TextileFlow - Unified Textile Manufacturing & Supply Chain Platform for Everest Textile Mills",
+  "scripts": {
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "build:frontend": "npm --prefix frontend run build",
+    "prisma:generate": "npm --prefix backend run prisma:generate",
+    "prisma:migrate": "npm --prefix backend run prisma:migrate",
+    "prisma:deploy": "npm --prefix backend run prisma:deploy",
+    "prisma:studio": "npm --prefix backend run prisma:studio",
+    "seed": "npm --prefix backend run seed"
+  },
+  "keywords": [
+    "textile",
+    "manufacturing",
+    "supply-chain",
+    "prisma",
+    "supabase",
+    "express"
+  ],
+  "author": "Kishan (Supply Chain Head)",
+  "license": "ISC"
+}
