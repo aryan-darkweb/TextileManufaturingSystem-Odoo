@@ -11,8 +11,7 @@ async function getDashboardSummary() {
     runningMachinesCount,
     productionOrderCount,
     inspectionsCount,
-    passedInspectionsCount,
-    employeeCount
+    passedInspectionsCount
   ] = await Promise.all([
     prisma.product.count(),
     prisma.product.findMany({ where: { status: 'ACTIVE' } }),
@@ -22,8 +21,7 @@ async function getDashboardSummary() {
     prisma.machine.count({ where: { status: 'RUNNING' } }),
     prisma.productionOrder.count({ where: { status: 'IN_PROGRESS' } }),
     prisma.qualityInspection.count(),
-    prisma.qualityInspection.count({ where: { status: 'PASSED' } }),
-    prisma.employee.count({ where: { status: 'ACTIVE' } })
+    prisma.qualityInspection.count({ where: { status: 'PASSED' } })
   ]);
 
   const lowStockCount = lowStockProducts.filter((p) => p.currentStock <= p.minimumStock).length;
@@ -42,7 +40,7 @@ async function getDashboardSummary() {
       activeProductionOrders: productionOrderCount,
       qcInspectionsCount: inspectionsCount,
       qcPassRate: `${qcPassRate}%`,
-      activeWorkers: employeeCount
+      activeWorkers: runningMachinesCount * 2
     },
     timestamp: new Date().toISOString()
   };

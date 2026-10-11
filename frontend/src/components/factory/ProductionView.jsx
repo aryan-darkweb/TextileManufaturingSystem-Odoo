@@ -37,6 +37,17 @@ export function ProductionView({ dbConnected }) {
   const [errorMsg, setErrorMsg] = useState(null);
   const [successMsg, setSuccessMsg] = useState(null);
 
+  // Auto-remove notification banners after 3.5 seconds
+  useEffect(() => {
+    if (successMsg || errorMsg) {
+      const timer = setTimeout(() => {
+        setSuccessMsg(null);
+        setErrorMsg(null);
+      }, 3500);
+      return () => clearTimeout(timer);
+    }
+  }, [successMsg, errorMsg]);
+
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');

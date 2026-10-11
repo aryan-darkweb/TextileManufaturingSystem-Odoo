@@ -7,7 +7,9 @@ import {
   AlertTriangle,
   X,
   Edit2,
-  Info
+  Info,
+  Plus,
+  ShoppingBag
 } from 'lucide-react';
 import { api } from '../services/api';
 
@@ -16,11 +18,33 @@ export function InventoryView({ dbConnected, onOpenHealth }) {
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState(null);
   const [successMsg, setSuccessMsg] = useState(null);
+
+  // Auto-remove notification banners after 3.5 seconds
+  useEffect(() => {
+    if (successMsg || errorMsg) {
+      const timer = setTimeout(() => {
+        setSuccessMsg(null);
+        setErrorMsg(null);
+      }, 3500);
+      return () => clearTimeout(timer);
+    }
+  }, [successMsg, errorMsg]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedType, setSelectedType] = useState('ALL');
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // Form State for Quick Restock / Purchase
+  const [isRestockModalOpen, setIsRestockModalOpen] = useState(false);
+  const [restockProduct, setRestockProduct] = useState(null);
+  const [suppliers, setSuppliers] = useState([]);
+  const [restockForm, setRestockForm] = useState({
+    supplierId: '',
+    quantity: '100',
+    unitPrice: '250',
+    notes: 'Direct Stock Restock'
+  });
 
   // Form State for Editing Product master non-quantity fields
   const [editFormData, setEditFormData] = useState({
@@ -51,9 +75,69 @@ export function InventoryView({ dbConnected, onOpenHealth }) {
     }
   };
 
+  const loadSuppliers = async () => {
+    try {
+      const res = await api.getSuppliers();
+      if (res?.data) {
+        setSuppliers(res.data);
+      }
+    } catch {
+      // ignore
+    }
+  };
+
   useEffect(() => {
     loadProducts();
+    loadSuppliers();
   }, []);
+
+  const handleOpenRestock = (product) => {
+    setRestockProduct(product);
+    setRestockForm({
+      supplierId: suppliers[0]?.id || '',
+      quantity: '100',
+      unitPrice: String(product.unitCost || 250),
+      notes: `Direct restock for ${product.name} (${product.code})`
+    });
+    setIsRestockModalOpen(true);
+    if (suppliers.length === 0) loadSuppliers();
+  };
+
+  const handleConfirmRestock = async (e) => {
+    e.preventDefault();
+    if (submitting || !restockProduct) return;
+    setSubmitting(true);
+    setErrorMsg(null);
+    setSuccessMsg(null);
+    try {
+      const qty = parseFloat(restockForm.quantity);
+      if (isNaN(qty) || qty <= 0) throw new Error('Quantity must be greater than zero');
+      const price = parseFloat(restockForm.unitPrice) || 0;
+      if (!restockForm.supplierId) throw new Error('Please select a supplier');
+
+      const payload = {
+        supplierId: restockForm.supplierId,
+        autoReceive: true,
+        notes: restockForm.notes,
+        items: [
+          {
+            productId: restockProduct.id,
+            orderedQty: qty,
+            unitPrice: price
+          }
+        ]
+      };
+
+      await api.createPurchaseOrder(payload);
+      setSuccessMsg(`Successfully purchased & received ${qty} ${restockProduct.unit} of ${restockProduct.name}! Inventory stock updated.`);
+      setIsRestockModalOpen(false);
+      await loadProducts();
+    } catch (err) {
+      setErrorMsg(err.message || 'Error restocking inventory item');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const handleOpenEdit = (product) => {
     setSelectedProduct(product);
@@ -129,15 +213,29 @@ export function InventoryView({ dbConnected, onOpenHealth }) {
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
           <button
-            onClick={loadProducts}
+            onClick={() => {
+              loadProducts();
+              setSuccessMsg('Inventory stocks refreshed live from database.');
+            }}
             disabled={loading}
-            className="p-2.5 border border-[#E8DFEF] bg-white rounded-xl hover:bg-[#FAF7FC] text-[#503568] transition cursor-pointer min-h-[44px]"
-            title="Refresh Inventory"
+            className="px-4 py-2.5 border border-[#E8DFEF] bg-white rounded-xl hover:bg-[#FAF7FC] text-[#503568] transition cursor-pointer min-h-[44px] flex items-center gap-2 font-semibold text-sm shadow-2xs"
+            title="Refresh Inventory Stocks"
           >
-            <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin text-[#7950A8]' : ''}`} />
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-[#7950A8]' : ''}`} />
+            <span>Refresh Stock</span>
           </button>
+
+          {products.length > 0 && (
+            <button
+              onClick={() => handleOpenRestock(products[0])}
+              className="px-4 py-2.5 bg-[#7950A8] hover:bg-[#674191] text-white rounded-xl font-bold text-sm transition shadow-xs cursor-pointer min-h-[44px] flex items-center gap-2"
+            >
+              <Plus className="w-4 h-4" />
+              <span>+ Quick Purchase / Restock</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -288,13 +386,23 @@ export function InventoryView({ dbConnected, onOpenHealth }) {
                       <td className="py-3.5 px-4 text-[#766D82]">{p.minimumStock} {p.unit}</td>
                       <td className="py-3.5 px-4 font-medium text-[#292235]">₹{p.unitCost?.toFixed(2)}</td>
                       <td className="py-3.5 px-4 text-right">
-                        <button
-                          onClick={() => handleOpenEdit(p)}
-                          className="p-2 border border-[#E8DFEF] rounded-lg hover:bg-[#EEE5F7] text-[#503568] transition cursor-pointer"
-                          title="Edit Master Specifications"
-                        >
-                          <Edit2 className="w-4 h-4" />
-                        </button>
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            onClick={() => handleOpenRestock(p)}
+                            className="px-2.5 py-1.5 bg-[#7950A8] hover:bg-[#674191] text-white rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1 shadow-2xs"
+                            title="Purchase and add stock directly"
+                          >
+                            <ShoppingBag className="w-3.5 h-3.5" />
+                            <span>+ Restock</span>
+                          </button>
+                          <button
+                            onClick={() => handleOpenEdit(p)}
+                            className="p-1.5 border border-[#E8DFEF] rounded-lg hover:bg-[#EEE5F7] text-[#503568] transition cursor-pointer"
+                            title="Edit Master Specifications"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -438,6 +546,154 @@ export function InventoryView({ dbConnected, onOpenHealth }) {
                   className="px-6 py-2.5 bg-[#7950A8] hover:bg-[#674191] text-white rounded-xl font-semibold shadow-xs transition disabled:opacity-50 cursor-pointer min-h-[44px]"
                 >
                   {submitting ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Quick Purchase / Restock Item */}
+      {isRestockModalOpen && restockProduct && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs overflow-y-auto">
+          <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden border border-[#E8DFEF] text-[#292235] my-8">
+            <div className="px-6 py-4 border-b border-[#E8DFEF] flex items-center justify-between bg-[#FAF7FC]">
+              <div className="flex items-center gap-2.5">
+                <ShoppingBag className="w-5 h-5 text-[#7950A8]" />
+                <h3 className="font-bold text-lg text-[#292235]">Quick Purchase / Restock Item</h3>
+              </div>
+              <button
+                onClick={() => setIsRestockModalOpen(false)}
+                className="p-1.5 rounded-lg text-[#766D82] hover:text-[#292235] hover:bg-[#EEE5F7] cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmRestock} className="p-6 space-y-4">
+              {/* Product Info Strip */}
+              <div className="flex items-center justify-between p-3.5 bg-[#FAF7FC] rounded-xl border border-[#E8DFEF]">
+                <div>
+                  <span className="text-xs uppercase font-bold text-[#766D82]">Selected Item</span>
+                  <p className="font-bold text-base text-[#503568]">{restockProduct.name}</p>
+                  <p className="font-mono text-xs text-[#766D82]">
+                    {restockProduct.code} ({restockProduct.type.replace(/_/g, ' ')})
+                  </p>
+                </div>
+                <div className="text-right">
+                  <span className="text-xs uppercase font-bold text-[#766D82]">Current Stock</span>
+                  <p className="font-extrabold text-lg text-[#292235]">
+                    {restockProduct.currentStock} {restockProduct.unit}
+                  </p>
+                </div>
+              </div>
+
+              {/* Product selector if user wants to switch */}
+              <div>
+                <label className="block font-semibold text-xs text-[#292235] mb-1.5">Change Item to Restock</label>
+                <select
+                  value={restockProduct.id}
+                  onChange={(e) => {
+                    const found = products.find((pr) => pr.id === e.target.value);
+                    if (found) handleOpenRestock(found);
+                  }}
+                  className="w-full px-3.5 py-2.5 border border-[#E8DFEF] rounded-xl bg-white text-sm min-h-[44px]"
+                >
+                  {products.map((pr) => (
+                    <option key={pr.id} value={pr.id}>
+                      {pr.name} ({pr.code}) — Stock: {pr.currentStock} {pr.unit}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Supplier Selection */}
+              <div>
+                <label className="block font-semibold text-xs text-[#292235] mb-1.5">Select Supplier *</label>
+                {suppliers.length > 0 ? (
+                  <select
+                    value={restockForm.supplierId}
+                    onChange={(e) => setRestockForm({ ...restockForm, supplierId: e.target.value })}
+                    required
+                    className="w-full px-3.5 py-2.5 border border-[#E8DFEF] rounded-xl bg-white text-sm min-h-[44px]"
+                  >
+                    <option value="">-- Choose Supplier --</option>
+                    {suppliers.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name} ({s.yarnTypesSupplied || 'Raw Materials Supplier'})
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    placeholder="Enter supplier name"
+                    value={restockForm.supplierId}
+                    onChange={(e) => setRestockForm({ ...restockForm, supplierId: e.target.value })}
+                    className="w-full px-3.5 py-2.5 border border-[#E8DFEF] rounded-xl bg-white text-sm min-h-[44px]"
+                  />
+                )}
+              </div>
+
+              {/* Quantity and Unit Price */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold text-xs text-[#292235] mb-1.5">
+                    Quantity to Purchase ({restockProduct.unit}) *
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    step="any"
+                    required
+                    value={restockForm.quantity}
+                    onChange={(e) => setRestockForm({ ...restockForm, quantity: e.target.value })}
+                    className="w-full px-3.5 py-2.5 border border-[#E8DFEF] rounded-xl bg-white text-sm font-bold min-h-[44px]"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-xs text-[#292235] mb-1.5">Unit Price (₹)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={restockForm.unitPrice}
+                    onChange={(e) => setRestockForm({ ...restockForm, unitPrice: e.target.value })}
+                    className="w-full px-3.5 py-2.5 border border-[#E8DFEF] rounded-xl bg-white text-sm min-h-[44px]"
+                  />
+                </div>
+              </div>
+
+              {/* Live Increment Preview */}
+              <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 font-semibold flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>
+                  New stock will immediately become:{' '}
+                  <strong>
+                    {(
+                      parseFloat(restockProduct.currentStock || 0) +
+                      (parseFloat(restockForm.quantity) || 0)
+                    ).toFixed(2)}{' '}
+                    {restockProduct.unit}
+                  </strong>{' '}
+                  upon confirming purchase.
+                </span>
+              </div>
+
+              <div className="pt-4 border-t border-[#E8DFEF] flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsRestockModalOpen(false)}
+                  className="px-5 py-2.5 border border-[#E8DFEF] rounded-xl font-semibold text-[#766D82] hover:bg-[#FAF7FC] transition cursor-pointer min-h-[44px]"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold shadow-xs transition disabled:opacity-50 cursor-pointer min-h-[44px] flex items-center gap-2"
+                >
+                  {submitting ? 'Purchasing & Updating...' : '⚡ Purchase & Add to Stock'}
                 </button>
               </div>
             </form>

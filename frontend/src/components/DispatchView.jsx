@@ -18,6 +18,17 @@ export function DispatchView({ dbConnected, onOpenHealth }) {
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState(null);
   const [successMsg, setSuccessMsg] = useState(null);
+
+  // Auto-remove notification banners after 3.5 seconds
+  useEffect(() => {
+    if (successMsg || errorMsg) {
+      const timer = setTimeout(() => {
+        setSuccessMsg(null);
+        setErrorMsg(null);
+      }, 3500);
+      return () => clearTimeout(timer);
+    }
+  }, [successMsg, errorMsg]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isDispatchModalOpen, setIsDispatchModalOpen] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
@@ -56,7 +67,7 @@ export function DispatchView({ dbConnected, onOpenHealth }) {
             salesOrderId: first.id,
             destination: first.customer?.address || 'Buyer Warehouse, Industrial Area',
             invoiceNumber: `INV-${new Date().getFullYear()}-${first.orderNumber.replace('SO-', '')}`,
-            dispatchedRollCount: String(first.items?.length * 5 || 10),
+            dispatchedRollCount: '1',
           }));
           setSelectedOrder(first);
         }
@@ -80,7 +91,7 @@ export function DispatchView({ dbConnected, onOpenHealth }) {
       salesOrderId: orderId,
       destination: ord?.customer?.address || prev.destination,
       invoiceNumber: ord ? `INV-${new Date().getFullYear()}-${ord.orderNumber.replace('SO-', '')}` : prev.invoiceNumber,
-      dispatchedRollCount: ord ? String(ord.items?.length * 5 || 10) : prev.dispatchedRollCount,
+      dispatchedRollCount: '1',
     }));
   };
 
@@ -88,12 +99,12 @@ export function DispatchView({ dbConnected, onOpenHealth }) {
     setSelectedOrder(order);
     setDispatchForm({
       salesOrderId: order.id,
-      vehicleNumber: 'GJ-05-TX-9921',
-      driverName: 'Mohan Lal',
-      driverPhone: '9825144550',
+      vehicleNumber: 'MH-12-TX-4401',
+      driverName: 'Ramesh Shinde',
+      driverPhone: '+91 98221 44550',
       destination: order.customer?.address || 'Buyer Delivery Destination',
       invoiceNumber: `INV-${new Date().getFullYear()}-${order.orderNumber.replace('SO-', '')}`,
-      dispatchedRollCount: String(order.items?.length * 5 || 10),
+      dispatchedRollCount: '1',
     });
     setIsDispatchModalOpen(true);
   };

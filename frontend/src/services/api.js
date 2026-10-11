@@ -161,7 +161,7 @@ export const api = {
     return request(`/accounting/expenses${query ? `?${query}` : ''}`);
   },
   getOrderCosting: (salesOrderId) =>
-    request(`/accounting/costing/by-order/${salesOrderId}`),
+    request(`/accounting/costing/by-order/${encodeURIComponent(String(salesOrderId || '').trim())}`),
   getOwnerFinancialSummary: (monthOrParams = '') => {
     let m = '';
     if (typeof monthOrParams === 'string') {
@@ -327,12 +327,50 @@ export const api = {
     const query = new URLSearchParams(params).toString();
     return request(`/quality/inspections${query ? `?${query}` : ''}`);
   },
-  getHrEmployees: (params = {}) => {
+  // Streamlined Mill Flow Pipeline (Everest Textile Mill Core Model)
+  getMillPipeline: (params = {}) => {
     const query = new URLSearchParams(params).toString();
-    return request(`/hr/employees${query ? `?${query}` : ''}`);
+    return request(`/mill-flow/pipeline${query ? `?${query}` : ''}`);
   },
-  getHrAttendance: (params = {}) => {
+  createMillBuyerOrder: (data) =>
+    request('/mill-flow/orders', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  orderMillYarn: (data) =>
+    request('/mill-flow/yarn/order', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  startMillProduction: (data) =>
+    request('/mill-flow/production/start', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  inspectMillQuality: (data) =>
+    request('/mill-flow/quality/inspect', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  dispatchMillFabric: (data) =>
+    request('/mill-flow/dispatch', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  getOwnerMillFinancials: (params = {}) => {
     const query = new URLSearchParams(params).toString();
-    return request(`/hr/attendance${query ? `?${query}` : ''}`);
+    return request(`/mill-flow/owner-financials${query ? `?${query}` : ''}`);
   },
+  getMillMachines: () => request('/mill-flow/machines'),
+  updateMillMachineStatus: (id, status) =>
+    request(`/mill-flow/machines/${id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    }),
+  advanceMillProductionStage: (id, data = {}) =>
+    request(`/mill-flow/production/${id}/advance-stage`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
 };
+

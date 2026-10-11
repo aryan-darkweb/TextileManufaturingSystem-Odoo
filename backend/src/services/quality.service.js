@@ -135,8 +135,37 @@ async function createInspection(data) {
       }
     }
 
-    // 4. Sales Order Auto-Transition Check:
-    // If every PO of the sales order is COMPLETED and at least one roll is PASSED -> READY_TO_SHIP
+    // 4. Update Production Order & Warehouse Finished Goods Stock
+    if (status === 'PASSED') {
+      await tx.productionOrder.update({
+        where: { id: productionOrderId },
+        data: {
+          status: 'COMPLETED',
+          producedQuantity: { increment: meters },
+          endDate: new Date()
+        }
+      });
+
+      if (order.productId) {
+        await tx.product.update({
+          where: { id: order.productId },
+          data: { currentStock: { increment: meters } }
+        });
+
+        await tx.inventoryTransaction.create({
+          data: {
+            productId: order.productId,
+            type: 'PRODUCTION_OUTPUT',
+            quantity: meters,
+            referenceNumber: order.orderNumber,
+            notes: `Roll ${rollNumber.trim().toUpperCase()} passed QC inspection.`,
+            performedBy: inspectorName.trim()
+          }
+        });
+      }
+    }
+
+    // 5. Sales Order Auto-Transition Check -> READY_TO_SHIP
     if (order.salesOrderId) {
       await checkAndSetSalesOrderReadyToShip(tx, order.salesOrderId);
     }
@@ -233,12 +262,11 @@ async function checkAndSetSalesOrderReadyToShip(tx, salesOrderId) {
   const productionOrders = so.productionOrders || [];
   if (productionOrders.length === 0) return;
 
-  const allCompleted = productionOrders.every((p) => p.status === 'COMPLETED');
   const hasPassedRoll = productionOrders.some((p) =>
     p.inspections.some((i) => i.status === 'PASSED')
   );
 
-  if (allCompleted && hasPassedRoll && so.status !== 'READY_TO_SHIP' && so.status !== 'DISPATCHED' && so.status !== 'COMPLETED') {
+  if (hasPassedRoll && so.status !== 'READY_TO_SHIP' && so.status !== 'DISPATCHED' && so.status !== 'COMPLETED') {
     await tx.salesOrder.update({
       where: { id: salesOrderId },
       data: { status: 'READY_TO_SHIP' }

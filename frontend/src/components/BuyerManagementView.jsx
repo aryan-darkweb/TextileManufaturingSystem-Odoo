@@ -32,6 +32,17 @@ export function BuyerManagementView({ dbConnected, onOpenHealth }) {
   const [errorMsg, setErrorMsg] = useState(null);
   const [successMsg, setSuccessMsg] = useState(null);
 
+  // Auto-remove notification banners after 3.5 seconds
+  useEffect(() => {
+    if (successMsg || errorMsg) {
+      const timer = setTimeout(() => {
+        setSuccessMsg(null);
+        setErrorMsg(null);
+      }, 3500);
+      return () => clearTimeout(timer);
+    }
+  }, [successMsg, errorMsg]);
+
   // View state: 'buyers' (directory) | 'orders' (all buyer orders)
   const [activeSubTab, setActiveSubTab] = useState('buyers');
   const [searchTerm, setSearchTerm] = useState('');

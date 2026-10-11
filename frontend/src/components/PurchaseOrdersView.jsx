@@ -22,6 +22,17 @@ export function PurchaseOrdersView({ dbConnected, onOpenHealth }) {
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState(null);
   const [successMsg, setSuccessMsg] = useState(null);
+
+  // Auto-remove notification banners after 3.5 seconds
+  useEffect(() => {
+    if (successMsg || errorMsg) {
+      const timer = setTimeout(() => {
+        setSuccessMsg(null);
+        setErrorMsg(null);
+      }, 3500);
+      return () => clearTimeout(timer);
+    }
+  }, [successMsg, errorMsg]);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -53,6 +64,7 @@ export function PurchaseOrdersView({ dbConnected, onOpenHealth }) {
   ]);
 
   // Form State: Receive Goods
+  const [autoReceiveStock, setAutoReceiveStock] = useState(true);
   const [receiveData, setReceiveData] = useState([]);
   const [receiveNotes, setReceiveNotes] = useState('');
 
@@ -140,6 +152,7 @@ export function PurchaseOrdersView({ dbConnected, onOpenHealth }) {
       const payload = {
         expectedDeliveryDate,
         notes,
+        autoReceive: autoReceiveStock,
         items: poItems.map((it) => ({
           productId: it.productId,
           orderedQty: parseFloat(it.orderedQty) || 0,
@@ -164,11 +177,46 @@ export function PurchaseOrdersView({ dbConnected, onOpenHealth }) {
       }
 
       const res = await api.createPurchaseOrder(payload);
-      setSuccessMsg(`Purchase Order ${res?.data?.orderNumber || ''} created successfully.`);
+      setSuccessMsg(
+        autoReceiveStock
+          ? `Purchase Order ${res?.data?.orderNumber || ''} created & received into warehouse stock! Inventory updated.`
+          : `Purchase Order ${res?.data?.orderNumber || ''} created successfully.`
+      );
       setIsCreateModalOpen(false);
       loadData();
     } catch (err) {
       setErrorMsg(err.message || 'Error creating purchase order');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleQuickReceive = async (po) => {
+    setSubmitting(true);
+    setErrorMsg(null);
+    setSuccessMsg(null);
+    try {
+      const itemsToReceive = (po.items || [])
+        .map((it) => ({
+          itemId: it.id,
+          productId: it.productId,
+          quantity: Math.max(0, (it.orderedQty || 0) - (it.receivedQty || 0)),
+        }))
+        .filter((it) => it.quantity > 0);
+
+      if (itemsToReceive.length === 0) {
+        throw new Error('All items in this purchase order have already been received');
+      }
+
+      await api.receivePurchaseOrderGoods(po.id, {
+        receivedItems: itemsToReceive,
+        notes: `1-Click full warehouse receipt for ${po.orderNumber}`,
+      });
+
+      setSuccessMsg(`⚡ Purchase Order ${po.orderNumber} received into stock! Inventory stock updated.`);
+      loadData();
+    } catch (err) {
+      setErrorMsg(err.message || 'Error receiving goods into inventory');
     } finally {
       setSubmitting(false);
     }
@@ -427,15 +475,29 @@ export function PurchaseOrdersView({ dbConnected, onOpenHealth }) {
                         </td>
                         <td className="py-3.5 px-4 text-right">
                           {canReceive ? (
-                            <button
-                              onClick={() => handleOpenReceiveModal(po)}
-                              className="px-3 py-1.5 bg-[#7950A8] hover:bg-[#674191] text-white rounded-lg text-xs font-semibold transition cursor-pointer flex items-center gap-1.5 ml-auto"
-                            >
-                              <PackageCheck className="w-3.5 h-3.5" />
-                              <span>Receive Goods</span>
-                            </button>
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                onClick={() => handleQuickReceive(po)}
+                                disabled={submitting}
+                                className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1 shadow-xs"
+                                title="Immediately receive items into inventory stock"
+                              >
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                <span>Quick Receive</span>
+                              </button>
+                              <button
+                                onClick={() => handleOpenReceiveModal(po)}
+                                className="px-2.5 py-1.5 bg-[#7950A8] hover:bg-[#674191] text-white rounded-lg text-xs font-semibold transition cursor-pointer flex items-center gap-1"
+                                title="Partial goods inward receipt"
+                              >
+                                <PackageCheck className="w-3.5 h-3.5" />
+                                <span>Receive...</span>
+                              </button>
+                            </div>
                           ) : (
-                            <span className="text-xs text-emerald-700 font-semibold">Fully Received</span>
+                            <span className="text-xs text-emerald-700 font-semibold flex items-center justify-end gap-1">
+                              <CheckCircle2 className="w-3.5 h-3.5" /> Fully in Stock
+                            </span>
                           )}
                         </td>
                       </tr>
@@ -671,6 +733,16 @@ export function PurchaseOrdersView({ dbConnected, onOpenHealth }) {
                   <span>Estimated Total Amount:</span>
                   <span className="text-base text-[#503568]">₹{calculateTotal().toLocaleString('en-IN')}</span>
                 </div>
+
+                <label className="flex items-center gap-2.5 p-3 rounded-xl bg-purple-50 border border-purple-200 cursor-pointer text-xs font-semibold text-[#503568] hover:bg-purple-100/70 transition">
+                  <input
+                    type="checkbox"
+                    checked={autoReceiveStock}
+                    onChange={(e) => setAutoReceiveStock(e.target.checked)}
+                    className="w-4 h-4 rounded text-[#7950A8] focus:ring-[#7950A8]"
+                  />
+                  <span>⚡ Auto-receive into Warehouse Inventory stock immediately upon purchase (Updates stock instantly)</span>
+                </label>
               </div>
 
               <div className="pt-4 border-t border-[#E8DFEF] flex justify-end gap-3">

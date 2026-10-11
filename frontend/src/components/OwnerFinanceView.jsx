@@ -441,7 +441,7 @@ export function OwnerFinanceView({ dbConnected, onOpenHealth, setActiveTab }) {
         <form onSubmit={handleLookupCosting} className="flex gap-2 max-w-md">
           <input
             type="text"
-            placeholder="Enter Sales Order ID or Order Reference (e.g. SO-2026-001)..."
+            placeholder="Enter Order # (SO-...), Dispatch # (DSP-...), or Batch #..."
             value={costingOrderId}
             onChange={(e) => setCostingOrderId(e.target.value)}
             className="flex-1 px-3 py-2 border border-[#E8DFEF] rounded-xl text-sm focus:border-[#7950A8] focus:outline-hidden"
@@ -464,11 +464,16 @@ export function OwnerFinanceView({ dbConnected, onOpenHealth, setActiveTab }) {
         {costingData && (
           <div className="bg-[#FAF7FC] p-5 rounded-2xl border border-[#E8DFEF] space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-[#E8DFEF]">
-              <div>
+              <div className="flex flex-wrap items-center gap-2">
                 <span className="font-bold text-base text-[#292235]">
                   {costingData.orderReference}
                 </span>
-                <span className="text-xs text-[#766D82] ml-2">
+                {costingData.dispatchNumber && (
+                  <span className="text-xs bg-purple-100 text-purple-800 font-semibold px-2 py-0.5 rounded-md border border-purple-200">
+                    Dispatch: {costingData.dispatchNumber}
+                  </span>
+                )}
+                <span className="text-xs text-[#766D82]">
                   Buyer: <strong>{costingData.buyerName}</strong> ({costingData.quantity} {costingData.unit || 'meters'})
                 </span>
               </div>

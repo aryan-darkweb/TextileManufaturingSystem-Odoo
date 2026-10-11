@@ -136,34 +136,6 @@ enum QualityStatus {
   REJECTED
 }
 
-enum Department {
-  SPINNING
-  WEAVING
-  DYEING
-  QUALITY
-  WAREHOUSE
-  MANAGEMENT
-}
-
-enum EmployeeStatus {
-  ACTIVE
-  ON_LEAVE
-  TERMINATED
-}
-
-enum ShiftType {
-  MORNING
-  EVENING
-  NIGHT
-}
-
-enum AttendanceStatus {
-  PRESENT
-  ABSENT
-  HALF_DAY
-  LEAVE
-}
-
 // ==============================================================================
 // 1. INVENTORY MODULE (Owner: Kishan)
 // ==============================================================================
@@ -414,42 +386,6 @@ model QualityInspection {
 // 7. HR & ATTENDANCE (Owner: Teammate - Integration Contract Ready)
 // ==============================================================================
 
-model Employee {
-  id           String         @id @default(cuid())
-  employeeCode String         @unique // EMP-101
-  name         String
-  department   Department
-  role         String
-  wagePerShift Float          @default(500.0)
-  status       EmployeeStatus @default(ACTIVE)
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
-
-  attendances     Attendance[]
-  stageLogs       ProductionStageLog[]
-  payrollPayments PayrollPayment[]
-
-  @@map("employees")
-}
-
-model Attendance {
-  id             String           @id @default(cuid())
-  employeeId     String
-  employee       Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  date           DateTime
-  shift          ShiftType
-  status         AttendanceStatus
-  wageCalculated Float            @default(0.0)
-  createdAt      DateTime         @default(now())
-
-  @@unique([employeeId, date, shift])
-  @@map("attendances")
-}
-
-// ==============================================================================
-// 8. FACTORY OPERATIONS EXTENSIONS (Owner: Developer 2)
-// ==============================================================================
-
 model ProductionStageLog {
   id                  String           @id @default(cuid())
   productionOrderId   String
@@ -458,7 +394,6 @@ model ProductionStageLog {
   machineId           String?
   machine             Machine?         @relation(fields: [machineId], references: [id])
   operatorId          String?
-  operator            Employee?        @relation(fields: [operatorId], references: [id])
   status              ProductionStatus @default(IN_PROGRESS)
   inputQuantity       Float            @default(0.0)
   outputQuantity      Float            @default(0.0)
@@ -618,34 +553,4 @@ model SupplierPayment {
   @@map("supplier_payments")
 }
 
-model PayrollPayment {
-  id              String        @id @default(cuid())
-  payoutNumber    String        @unique // PAYROLL-2026-0001
-  month           String        // YYYY-MM
-  employeeId      String?
-  employee        Employee?     @relation(fields: [employeeId], references: [id])
-  totalShifts     Int           @default(0)
-  amountPaid      Float
-  paidAt          DateTime      @default(now())
-  paymentMethod   PaymentMethod @default(BANK_TRANSFER)
-  referenceNumber String?
-  notes           String?
-  createdAt       DateTime      @default(now())
-
-  @@map("payroll_payments")
-}
-
-model BusinessExpense {
-  id              String        @id @default(cuid())
-  expenseNumber   String        @unique // EXP-2026-0001
-  category        String        // Utilities, Maintenance, Transport, Supplies, Other
-  amount          Float
-  expenseDate     DateTime      @default(now())
-  paymentMethod   PaymentMethod @default(BANK_TRANSFER)
-  referenceNumber String?
-  notes           String?
-  createdAt       DateTime      @default(now())
-
-  @@map("business_expenses")
-}
 

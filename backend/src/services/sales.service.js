@@ -243,8 +243,13 @@ async function listSalesOrders(filters = {}) {
 }
 
 async function getSalesOrderById(id) {
-  const order = await prisma.salesOrder.findUnique({
-    where: { id },
+  const order = await prisma.salesOrder.findFirst({
+    where: {
+      OR: [
+        { id },
+        { orderNumber: id }
+      ]
+    },
     include: {
       customer: true,
       items: {
@@ -256,7 +261,7 @@ async function getSalesOrderById(id) {
         include: {
           machine: true,
           inspections: true,
-          stageLogs: { include: { operator: true, machine: true } }
+          stageLogs: { include: { machine: true } }
         }
       },
       dispatchRecords: true,

@@ -147,21 +147,25 @@ async function createPurchaseOrder(data) {
       const totalPrice = orderedQty * unitPrice;
       calculatedTotal += totalPrice;
 
+      const shouldAutoReceive = data.autoReceive !== false && data.autoReceive !== 'false';
       validatedItems.push({
         productId: product.id,
         orderedQty,
-        receivedQty: 0.0,
+        receivedQty: shouldAutoReceive ? orderedQty : 0.0,
         unitPrice,
         totalPrice
       });
     }
 
+    const shouldAutoReceive = data.autoReceive !== false && data.autoReceive !== 'false';
+    const poStatus = data.status || (shouldAutoReceive ? 'RECEIVED' : 'ORDERED');
+
     // 4. Create Purchase Order with nested items
-    return await tx.purchaseOrder.create({
+    const po = await tx.purchaseOrder.create({
       data: {
         orderNumber,
         supplierId,
-        status: data.status || 'ORDERED',
+        status: poStatus,
         orderDate: new Date(data.orderDate || Date.now()),
         expectedDeliveryDate: data.expectedDeliveryDate ? new Date(data.expectedDeliveryDate) : null,
         totalAmount: calculatedTotal,
@@ -179,6 +183,50 @@ async function createPurchaseOrder(data) {
         }
       }
     });
+
+    // 5. If autoReceive is active, update product stock and create inventoryTransaction
+    if (shouldAutoReceive) {
+      for (const item of po.items) {
+        const updatedProduct = await tx.product.update({
+          where: { id: item.productId },
+          data: { currentStock: { increment: item.orderedQty } }
+        });
+
+        await tx.inventoryTransaction.create({
+          data: {
+            productId: item.productId,
+            type: 'PURCHASE_RECEIPT',
+            quantity: item.orderedQty,
+            balanceAfter: updatedProduct.currentStock,
+            referenceNumber: po.orderNumber,
+            notes: data.notes ? `Purchase Order ${po.orderNumber}: ${data.notes}` : `Stock inward from purchase order ${po.orderNumber}`,
+            performedBy: data.performedBy || 'Procurement Gate'
+          }
+        });
+      }
+
+      // Record bill in financial ledger
+      try {
+        await tx.supplierBill.create({
+          data: {
+            billNumber: `BILL-${po.orderNumber}`,
+            supplierId: po.supplierId,
+            purchaseOrderId: po.id,
+            billDate: new Date(),
+            dueDate: new Date(Date.now() + 30 * 86400000),
+            status: 'PAID',
+            totalAmount: calculatedTotal,
+            paidAmount: calculatedTotal,
+            balanceDue: 0,
+            notes: `Auto-recorded purchase bill for ${po.orderNumber}`
+          }
+        });
+      } catch {
+        // supplierBill is optional/tolerant
+      }
+    }
+
+    return po;
   });
 }
 
@@ -428,11 +476,15 @@ async function createPurchaseOrderFromShortage(data) {
       poNotesParts.push(notes.trim());
     }
 
+    const shouldAutoReceive = data.autoReceive !== false && data.autoReceive !== 'false';
+    const poStatus = shouldAutoReceive ? 'RECEIVED' : 'ORDERED';
+    const receivedQty = shouldAutoReceive ? qty : 0.0;
+
     const newPO = await tx.purchaseOrder.create({
       data: {
         orderNumber,
         supplierId,
-        status: 'ORDERED', // Stock remains completely untouched
+        status: poStatus,
         orderDate: new Date(),
         expectedDeliveryDate: expectedDeliveryDate ? new Date(expectedDeliveryDate) : null,
         totalAmount: totalPrice,
@@ -442,7 +494,7 @@ async function createPurchaseOrderFromShortage(data) {
             {
               productId: material.id,
               orderedQty: qty,
-              receivedQty: 0.0,
+              receivedQty,
               unitPrice: price,
               totalPrice
             }
@@ -456,6 +508,44 @@ async function createPurchaseOrderFromShortage(data) {
         }
       }
     });
+
+    if (shouldAutoReceive) {
+      const updatedProduct = await tx.product.update({
+        where: { id: material.id },
+        data: { currentStock: { increment: qty } }
+      });
+
+      await tx.inventoryTransaction.create({
+        data: {
+          productId: material.id,
+          type: 'PURCHASE_RECEIPT',
+          quantity: qty,
+          balanceAfter: updatedProduct.currentStock,
+          referenceNumber: newPO.orderNumber,
+          notes: `Shortage replenishment received into inventory from ${supplier.name}`,
+          performedBy: 'Procurement Gate'
+        }
+      });
+
+      try {
+        await tx.supplierBill.create({
+          data: {
+            billNumber: `BILL-${newPO.orderNumber}`,
+            supplierId: supplier.id,
+            purchaseOrderId: newPO.id,
+            billDate: new Date(),
+            dueDate: new Date(Date.now() + 30 * 86400000),
+            status: 'PAID',
+            totalAmount: totalPrice,
+            paidAmount: totalPrice,
+            balanceDue: 0,
+            notes: `Shortage purchase bill for ${supplier.name}`
+          }
+        });
+      } catch {
+        // supplierBill is optional/tolerant
+      }
+    }
 
     return newPO;
   });

@@ -208,7 +208,7 @@ async function getProductionOrderById(id) {
       machine: true,
       stageLogs: {
         orderBy: { createdAt: 'asc' },
-        include: { machine: true, operator: true }
+        include: { machine: true }
       },
       materialConsumptions: {
         include: { rawMaterial: true }
@@ -779,7 +779,6 @@ async function getFactoryToday() {
     orders,
     machines,
     qualityAlerts,
-    attendances,
     lowStockProducts,
     overdueOrders
   ] = await Promise.all([
@@ -788,10 +787,6 @@ async function getFactoryToday() {
     prisma.qualityInspection.findMany({
       where: { status: { in: ['REWORK', 'REJECTED'] } },
       select: { status: true, rollNumber: true, productionOrderId: true }
-    }),
-    prisma.attendance.findMany({
-      where: { date: { gte: todayStart } },
-      select: { status: true }
     }),
     prisma.product.findMany({
       where: { status: 'ACTIVE' },
@@ -824,10 +819,10 @@ async function getFactoryToday() {
   };
 
   const attendanceToday = {
-    present: attendances.filter((a) => a.status === 'PRESENT').length,
-    halfDay: attendances.filter((a) => a.status === 'HALF_DAY').length,
-    absent: attendances.filter((a) => a.status === 'ABSENT').length,
-    leave: attendances.filter((a) => a.status === 'LEAVE').length
+    present: 0,
+    halfDay: 0,
+    absent: 0,
+    leave: 0
   };
 
   const lowStockCount = lowStockProducts.filter((p) => p.currentStock <= p.minimumStock).length;

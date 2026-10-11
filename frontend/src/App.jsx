@@ -10,10 +10,11 @@ import { FactoryOpsView } from './components/factory/FactoryOpsView';
 import { DashboardView } from './components/DashboardView';
 import { TransactionsView } from './components/TransactionsView';
 import { OwnerFinanceView } from './components/OwnerFinanceView';
+import { MillFlowView } from './components/MillFlowView';
 import { api } from './services/api';
 
 export function App() {
-  const [activeTab, setActiveTab] = useState('grid');
+  const [activeTab, setActiveTab] = useState('mill-flow');
   const [health, setHealth] = useState(null);
   const [dashboardSummary, setDashboardSummary] = useState(null);
   const [isHealthModalOpen, setIsHealthModalOpen] = useState(false);
@@ -71,6 +72,12 @@ export function App() {
 
       {/* Main Content Area */}
       <main className="flex-1">
+        {activeTab === 'mill-flow' && (
+          <MillFlowView
+            dbConnected={dbConnected}
+            onOpenHealth={() => setIsHealthModalOpen(true)}
+          />
+        )}
         {activeTab === 'grid' && (
           <ModuleGrid
             setActiveTab={setActiveTab}
@@ -122,13 +129,6 @@ export function App() {
             dbConnected={dbConnected}
             onOpenHealth={() => setIsHealthModalOpen(true)}
             initialTab="quality"
-          />
-        )}
-        {activeTab === 'hr' && (
-          <FactoryOpsView
-            dbConnected={dbConnected}
-            onOpenHealth={() => setIsHealthModalOpen(true)}
-            initialTab="hr"
           />
         )}
         {activeTab === 'transactions' && (

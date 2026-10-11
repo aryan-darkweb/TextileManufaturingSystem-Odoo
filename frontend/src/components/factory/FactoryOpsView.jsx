@@ -10,7 +10,6 @@ import {
 import { FactoryTodayView } from './FactoryTodayView';
 import { ProductionView } from './ProductionView';
 import { QualityView } from './QualityView';
-import { HrView } from './HrView';
 import { MachineDailyOutputView } from './MachineDailyOutputView';
 
 export function FactoryOpsView({ dbConnected, onOpenHealth, initialTab = 'today' }) {
@@ -37,7 +36,7 @@ export function FactoryOpsView({ dbConnected, onOpenHealth, initialTab = 'today'
               </span>
             </div>
             <p className="text-xs text-slate-500 mt-1 max-w-2xl">
-              Execution, quality rolls inspection, and worker shift registers for Everest Textile Mills. Monolithic Express APIs & shared Supabase PostgreSQL.
+              Execution, machine output scheduling, and quality rolls inspection for Everest Textile Mills. Monolithic Express APIs & shared Supabase PostgreSQL.
             </p>
           </div>
 
@@ -90,18 +89,6 @@ export function FactoryOpsView({ dbConnected, onOpenHealth, initialTab = 'today'
               <CheckSquare className="w-3.5 h-3.5 text-pink-600" />
               Quality Control
             </button>
-
-            <button
-              onClick={() => setSubTab('hr')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                subTab === 'hr'
-                  ? 'bg-white text-slate-900 shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <Users className="w-3.5 h-3.5 text-indigo-600" />
-              HR & Attendance
-            </button>
           </div>
         </div>
       </div>
@@ -115,7 +102,6 @@ export function FactoryOpsView({ dbConnected, onOpenHealth, initialTab = 'today'
       )}
       {subTab === 'production' && <ProductionView dbConnected={dbConnected} />}
       {subTab === 'quality' && <QualityView dbConnected={dbConnected} />}
-      {subTab === 'hr' && <HrView dbConnected={dbConnected} />}
     </div>
   );
 }

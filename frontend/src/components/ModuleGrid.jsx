@@ -76,14 +76,14 @@ export function ModuleGrid({ setActiveTab, summary, dbConnected }) {
       stats: summary?.factoryOperations ? `${summary.factoryOperations.qcPassRate} QC Pass Rate` : 'Inspections'
     },
     {
-      id: 'hr',
-      title: 'HR & Attendance',
-      subtitle: 'Shift Registers & Wage Calculations',
-      status: 'Available',
-      icon: Users,
-      description: 'Daily shift attendance tracking (Morning, Evening, Night) with wage calculations.',
-      tab: 'hr',
-      stats: summary?.factoryOperations ? `${summary.factoryOperations.activeWorkers} Workers` : 'Shift Registers'
+      id: 'mill-flow',
+      title: 'Simplified Manufacturing',
+      subtitle: 'Buyer Order → 3-Step Production → QC → Dispatch',
+      status: 'Primary Flow',
+      icon: Layers,
+      description: 'The direct textile manufacturing pipeline: Buyer order & yarn check, 3-step parallel machine execution (Spinning, Weaving, Dyeing), QC pass/defect rerun, and dispatch.',
+      tab: 'mill-flow',
+      stats: 'Core Pipeline'
     },
     {
       id: 'transactions',

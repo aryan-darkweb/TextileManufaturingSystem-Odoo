@@ -1,20 +1,17 @@
 import React from 'react';
-import { Database, Layers, LayoutGrid, Package, Users, Truck, ShoppingBag, BarChart3, Factory, Receipt, PieChart } from 'lucide-react';
+import { Database, Layers, Factory, Users, Package, ShoppingBag, Truck, PieChart } from 'lucide-react';
 
 export function Navbar({ activeTab, setActiveTab, health, onOpenHealth }) {
   const dbConnected = health?.database?.connected;
   const dbConfigured = health?.database?.configured;
 
   const navItems = [
-    { id: 'grid', label: 'App Grid', icon: LayoutGrid },
-    { id: 'buyers', label: 'Buyer Management', icon: Users, alias: ['sales', 'buyers'] },
-    { id: 'inventory', label: 'Inventory', icon: Package },
-    { id: 'purchase', label: 'Purchases', icon: ShoppingBag },
+    { id: 'mill-flow', label: 'Simplified Manufacturing', icon: Factory, alias: ['mill-flow', 'flow', 'manufacturing'] },
+    { id: 'buyers', label: 'Buyers & Orders', icon: Users, alias: ['sales', 'buyers'] },
+    { id: 'inventory', label: 'Yarn & Stock', icon: Package },
+    { id: 'purchase', label: 'Suppliers', icon: ShoppingBag },
     { id: 'dispatch', label: 'Dispatch', icon: Truck },
-    { id: 'factory', label: 'Factory Ops', icon: Factory },
-    { id: 'transactions', label: 'Transactions', icon: Receipt },
-    { id: 'finance', label: 'Owner Finance', icon: PieChart },
-    { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
+    { id: 'finance', label: 'Owner Finance', icon: PieChart, alias: ['finance', 'transactions'] },
   ];
 
   return (
@@ -24,7 +21,7 @@ export function Navbar({ activeTab, setActiveTab, health, onOpenHealth }) {
           {/* Logo & Brand */}
           <div
             className="flex items-center space-x-3 cursor-pointer group select-none"
-            onClick={() => setActiveTab('grid')}
+            onClick={() => setActiveTab('mill-flow')}
           >
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#503568] via-[#674191] to-[#7950A8] flex items-center justify-center shadow-md shadow-[#7950A8]/20 transition-transform group-hover:scale-105">
               <Layers className="w-5 h-5 text-white" />
@@ -34,11 +31,11 @@ export function Navbar({ activeTab, setActiveTab, health, onOpenHealth }) {
                 <span className="font-bold text-lg tracking-tight text-[#292235]">TextileFlow</span>
                 <span className="text-[11px] font-medium text-[#766D82]">ERP</span>
               </div>
-              <p className="text-[11px] text-[#766D82] -mt-0.5">Textile Mills Platform</p>
+              <p className="text-[11px] text-[#766D82] -mt-0.5 font-medium">Textile Mills Platform</p>
             </div>
           </div>
 
-          {/* Center Navigation Links */}
+          {/* Center Navigation Links (Excluding 'All Modules') */}
           <nav className="hidden lg:flex items-center space-x-1">
             {navItems.map((item) => {
               const Icon = item.icon;
@@ -47,7 +44,7 @@ export function Navbar({ activeTab, setActiveTab, health, onOpenHealth }) {
                 <button
                   key={item.id}
                   onClick={() => setActiveTab(item.id)}
-                  className={`flex items-center space-x-2 px-3.5 py-2 rounded-xl text-sm font-semibold transition-all ${
+                  className={`flex items-center space-x-2 px-3.5 py-2 rounded-xl text-sm font-semibold transition-all cursor-pointer ${
                     isActive
                       ? 'bg-[#EEE5F7] text-[#503568] shadow-xs'
                       : 'text-[#766D82] hover:text-[#292235] hover:bg-[#FAF7FC]'
@@ -103,7 +100,7 @@ export function Navbar({ activeTab, setActiveTab, health, onOpenHealth }) {
               <button
                 key={item.id}
                 onClick={() => setActiveTab(item.id)}
-                className={`flex items-center space-x-1 px-2.5 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition ${
+                className={`flex items-center space-x-1 px-2.5 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition cursor-pointer ${
                   isActive
                     ? 'bg-[#EEE5F7] text-[#503568] font-semibold'
                     : 'text-[#766D82] hover:bg-[#FAF7FC]'
